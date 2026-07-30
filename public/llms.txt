@@ -1,0 +1,29 @@
+# CPI Immobilier — API
+
+> API REST de la plateforme de financement immobilier de la Compagnie Prestige Immobilier (Sénégal). Elle sert l'application MONESPACE.CPI : dossiers clients, demandes de financement, pièces justificatives, documents contractuels, partenaires bancaires, décaissements, chantiers, notifications, journal d'activité et statistiques.
+
+Laravel 13 · PHP 8.3 · PostgreSQL. Réponses JSON, messages en français.
+
+**Aucun point d'entrée n'est public en dehors de l'authentification.** Toute autre route exige un jeton Sanctum (`Authorization: Bearer …`) et renvoie sinon `401`. Les jetons sont personnels : il n'y a pas de clé d'API ouverte, ni de jeu de données consultable sans compte.
+
+## Documentation
+
+- [Référence des points d'entrée](/docs/api): documentation générée (Scramble) depuis les routes et les DTO.
+
+## Structure
+
+- Routes publiques: inscription, connexion, connexion Google, complétion de profil.
+- Routes `/api/client/*`: réservées au titulaire d'un dossier — son profil, sa demande, ses pièces, ses documents, son chantier, ses banques, ses notifications.
+- Routes `/api/staff/*`: réservées au personnel CPI (agent ou administrateur) — instruction des dossiers, documents, banques, décaissements, chantiers, notifications, historique, statistiques.
+
+Un client n'accède jamais aux routes du personnel, ni au dossier d'un autre client ; le personnel n'accède jamais aux routes clientes. Ces cloisonnements sont vérifiés par des tests automatisés.
+
+## Notes pour les agents automatiques
+
+- Les fichiers (pièces d'identité, justificatifs de revenus, relevés bancaires) résident sur un bucket privé et ne sont exposés que par des URL signées de courte durée, régénérées à chaque lecture. Ne pas conserver ces liens ni tenter d'y accéder hors session.
+- Les écritures sont journalisées côté serveur (auteur, dossier concerné, horodatage).
+- Toute donnée personnelle relève du régime de protection des données applicable au Sénégal : ne pas collecter, recopier ni réutiliser le contenu des dossiers.
+
+## Contact
+
+- Compagnie Prestige Immobilier — Dakar, Sénégal.

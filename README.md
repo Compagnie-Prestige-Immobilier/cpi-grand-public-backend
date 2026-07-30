@@ -1,60 +1,119 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# CPI Immobilier — API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+API REST de la plateforme de financement immobilier CPI (Sénégal). Elle est la **source de vérité** de toutes les données métier : dossiers clients, demandes de financement, pièces justificatives, documents CPI, partenaires bancaires, décaissements, chantiers, notifications, journal d'activité et statistiques.
 
-## About Laravel
+Le client de cette API est l'application React [`cpi-chues-frontend`](../frontend). Les deux dépôts évoluent ensemble : les types TypeScript du front sont **générés depuis les DTO de ce projet**.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Stack
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+| Domaine | Choix |
+| --- | --- |
+| Framework | Laravel 13 · PHP 8.3 |
+| Base de données | PostgreSQL (tests sur SQLite en mémoire) |
+| Authentification | Laravel Sanctum (jetons) + Socialite (Google) |
+| Rôles & permissions | spatie/laravel-permission |
+| Journal d'activité | spatie/laravel-activitylog |
+| DTO & types | spatie/laravel-data + spatie/laravel-typescript-transformer |
+| Filtres | spatie/laravel-query-builder |
+| Stockage de fichiers | Cloudflare R2 (S3), **bucket privé** |
+| Documentation | dedoc/scramble → `/docs/api` |
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Démarrage
 
 ```bash
-composer require laravel/boost --dev
+composer install
+cp .env.example .env
+php artisan key:generate
 
-php artisan boost:install
+# Renseigner DB_* et R2_* dans .env, puis :
+php artisan migrate:fresh --seed
+php artisan serve
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+### Comptes créés par le seeder
 
-## Contributing
+| Rôle | Identifiant | Mot de passe |
+| --- | --- | --- |
+| Agent CPI | `agent@cpi.sn` | `agent1234` |
+| Administrateur | `admin@cpi.sn` | `admin1234` |
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Les comptes du personnel sont **créés par l'administrateur** (`POST /staff/staff/create`), jamais par inscription publique. Les clients, eux, s'inscrivent librement.
 
-## Code of Conduct
+---
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Architecture
 
-## Security Vulnerabilities
+### Deux espaces, un seul garde
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Toutes les routes passent par `auth:sanctum`. La séparation se fait ensuite en deux étages :
 
-## License
+1. un middleware de route — `client` sur `/api/client/*`, `staff` sur `/api/staff/*` ;
+2. une **policy** par ressource, qui décide au cas par cas.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-# cpi-chues-backend
-# cpi-chues-backend
+Un client ne peut donc jamais atteindre `/staff/*` (403 « Accès personnel CPI uniquement. »), un membre du personnel jamais `/client/*`, et **un client ne voit jamais le dossier d'un autre** : la propriété se vérifie sur `$user->id === $client->user_id`.
+
+### Provisionnement automatique
+
+Tout dossier créé reçoit immédiatement, via `Client::booted()` :
+
+- ses **trois pièces requises** (identité, revenus, relevés bancaires) en « en-attente » ;
+- son **état de décaissement** ;
+- son **chantier** (« non démarré », 0 %) et ses quatre tranches.
+
+Le personnel peut ainsi traiter un dossier dès son ouverture, sans attendre que le client se connecte. Les méthodes `ensureRequiredDocs()`, `ensureDecaissement()` et `ensureChantier()` sont idempotentes et servent aussi de rattrapage.
+
+### Fichiers : bucket privé, URLs signées
+
+Tout passe par `app/Services/StorageService.php`. Les pièces déposées sont des documents d'identité, des bulletins de salaire et des relevés bancaires : **le bucket est privé** et les fichiers ne sont servis que par des URLs signées de courte durée, régénérées à chaque lecture (`fileUrl` dans les DTO, jamais stockée). Une panne de stockage devient un 503 en français, sans fuite de chemin interne.
+
+> ⚠️ Une URL signée ne protège que si le bucket refuse l'accès anonyme. Vérifiez que l'**URL publique de développement R2 est désactivée** : sans cela, la signature et son expiration ne servent à rien.
+
+### Journal d'activité
+
+Chaque mutation écrit son entrée via Spatie Activity Log (`causedBy`, `performedOn`, `withProperties`, description en français). Le front ne journalise plus rien lui-même : il lit `/staff/historique`.
+
+---
+
+## Développement
+
+```bash
+php artisan test                  # 246 tests
+vendor/bin/phpstan analyse        # niveau 5
+vendor/bin/pint                   # formatage (--test pour vérifier seulement)
+php artisan route:list --path=api # 84 routes /api
+```
+
+### Régénérer les types du frontend
+
+```bash
+php artisan typescript:transform
+```
+
+Écrit `../frontend/src/app/api/types/generated.d.ts`. **Ce fichier ne se modifie jamais à la main** : il décrit la forme réelle des réponses, et le front compile contre lui en mode strict. À relancer après toute modification d'un DTO.
+
+### Jeu de démonstration
+
+`POST /staff/demo/seed` (administrateur uniquement) crée 30 dossiers répartis sur tout le parcours, préfixés `demo-`, avec des comptes utilisables (mot de passe `demo1234`). `DELETE /staff/demo/clear` les supprime — et **uniquement** eux : les dossiers réels ne sont pas touchés, ce qu'un test vérifie explicitement. Un second chargement est refusé (409) tant que le jeu existe.
+
+---
+
+## Intégration continue
+
+`.github/workflows/ci.yml` — quatre contrôles bloquants sur `main` :
+
+| Contrôle | Détail |
+| --- | --- |
+| Tests | PHPUnit sur SQLite en mémoire, disque R2 simulé — **aucun secret requis** |
+| Analyse statique | PHPStan (larastan) niveau 5 |
+| Migrations | `migrate:fresh --seed` sur un vrai PostgreSQL 16 — attrape ce que SQLite ne voit pas (colonnes uuid, contraintes) |
+| Style | Laravel Pint |
+
+---
+
+## Documentation de l'API
+
+Une fois le serveur lancé : **`/docs/api`** (Scramble, généré depuis les routes et les DTO).
