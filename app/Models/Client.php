@@ -1,0 +1,213 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
+
+class Client extends Model
+{
+    use HasUuids, LogsActivity;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var list<string>
+     */
+    protected $fillable = [
+        'user_id',
+        'name',
+        'ref',
+        'statut',
+        'progression',
+        'project_nom',
+        'adresse',
+        'email',
+        'phone',
+        'employer',
+        'fonction',
+        'conseiller',
+        'conseiller_id',
+        'banque',
+        'dossier_etape',
+        'date_inscription',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'progression' => 'integer',
+            'dossier_etape' => 'integer',
+            'date_inscription' => 'date',
+        ];
+    }
+
+    /**
+     * Tout dossier naît avec ses trois pièces requises « en-attente » : le staff
+     * doit les voir dès l'ouverture du dossier, sans attendre que le client ait
+     * visité son espace documents. Même logique pour l'état de décaissement :
+     * le module financier doit trouver une ligne dès l'ouverture du dossier.
+     */
+    protected static function booted(): void
+    {
+        static::created(function (Client $client): void {
+            $client->ensureRequiredDocs();
+            $client->ensureDecaissement();
+        });
+    }
+
+    /**
+     * Crée les lignes manquantes parmi les trois pièces requises et les renvoie
+     * dans l'ordre canonique. Idempotent.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, RequisDoc>
+     */
+    public function ensureRequiredDocs(): \Illuminate\Database\Eloquent\Collection
+    {
+        foreach (RequisDoc::REQUIRED as $docId => $label) {
+            RequisDoc::firstOrCreate(
+                ['client_id' => $this->id, 'doc_id' => $docId],
+                ['label' => $label, 'status' => 'en-attente', 'version' => 0],
+            );
+        }
+
+        return $this->requisDocs()->get();
+    }
+
+    /**
+     * Rattrapage pour les dossiers antérieurs à la création automatique de
+     * l'état de décaissement. Idempotent.
+     */
+    public function ensureDecaissement(): Decaissement
+    {
+        $decaissement = $this->decaissement()->first();
+
+        if ($decaissement instanceof Decaissement) {
+            return $decaissement;
+        }
+
+        // create() ne remonte pas les défauts SQL (foncier) : refresh() obligatoire.
+        return $this->decaissement()->create([
+            'tranches' => Decaissement::defaultTranches(),
+        ])->refresh();
+    }
+
+    /**
+     * Génère une référence de dossier unique : CPI-{year}-{suffix}.
+     */
+    public static function generateRef(): string
+    {
+        do {
+            $ref = 'CPI-'.now()->year.'-'.strtoupper(\Illuminate\Support\Str::random(5));
+        } while (static::query()->where('ref', $ref)->exists());
+
+        return $ref;
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logAll()
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
+    }
+
+    /**
+     * L'utilisateur (compte de connexion) associé à ce client.
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Le conseiller CPI assigné à ce client.
+     */
+    public function conseillerUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'conseiller_id');
+    }
+
+    /**
+     * La demande de financement du client.
+     *
+     * @return HasOne<Demande, $this>
+     */
+    public function demande(): HasOne
+    {
+        return $this->hasOne(Demande::class);
+    }
+
+    /**
+     * Les documents requis du client, toujours dans l'ordre d'affichage
+     * (identite, revenus, bancaires) — l'API doit être déterministe.
+     *
+     * @return HasMany<RequisDoc, $this>
+     */
+    public function requisDocs(): HasMany
+    {
+        $cases = '';
+        foreach (array_keys(RequisDoc::REQUIRED) as $rank => $docId) {
+            $cases .= " when '{$docId}' then {$rank}";
+        }
+
+        return $this->hasMany(RequisDoc::class)
+            ->orderByRaw('case doc_id'.$cases.' else 99 end');
+    }
+
+    /**
+     * Les documents CPI du client.
+     *
+     * @return HasMany<CpiDoc, $this>
+     */
+    public function cpiDocs(): HasMany
+    {
+        return $this->hasMany(CpiDoc::class);
+    }
+
+    /**
+     * Les affectations bancaires du client.
+     *
+     * @return HasMany<BankAssignment, $this>
+     */
+    public function bankAssignments(): HasMany
+    {
+        return $this->hasMany(BankAssignment::class);
+    }
+
+    /**
+     * L'état de décaissement du client.
+     *
+     * @return HasOne<Decaissement, $this>
+     */
+    public function decaissement(): HasOne
+    {
+        return $this->hasOne(Decaissement::class);
+    }
+
+    /**
+     * Le chantier du client.
+     */
+    public function chantier(): HasOne
+    {
+        return $this->hasOne(Chantier::class);
+    }
+
+    /**
+     * Les notifications adressées à ce client.
+     */
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
+}
