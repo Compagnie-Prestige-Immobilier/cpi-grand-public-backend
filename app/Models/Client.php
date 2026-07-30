@@ -55,14 +55,16 @@ class Client extends Model
     /**
      * Tout dossier naît avec ses trois pièces requises « en-attente » : le staff
      * doit les voir dès l'ouverture du dossier, sans attendre que le client ait
-     * visité son espace documents. Même logique pour l'état de décaissement :
-     * le module financier doit trouver une ligne dès l'ouverture du dossier.
+     * visité son espace documents. Même logique pour l'état de décaissement et
+     * pour le chantier : les modules correspondants doivent trouver une ligne
+     * dès l'ouverture du dossier.
      */
     protected static function booted(): void
     {
         static::created(function (Client $client): void {
             $client->ensureRequiredDocs();
             $client->ensureDecaissement();
+            $client->ensureChantier();
         });
     }
 
@@ -100,6 +102,34 @@ class Client extends Model
         return $this->decaissement()->create([
             'tranches' => Decaissement::defaultTranches(),
         ])->refresh();
+    }
+
+    /**
+     * Le chantier du dossier, avec ses quatre tranches de construction.
+     * Rattrapage pour les dossiers antérieurs au module. Idempotent.
+     *
+     * Un chantier existe pour TOUT dossier : il démarre « non démarré » à 0 %.
+     * L'espace client sait alors toujours quoi afficher, et l'entrée de menu
+     * « Mon chantier » se décide sur le statut, pas sur l'existence de la ligne.
+     */
+    public function ensureChantier(): Chantier
+    {
+        $chantier = $this->chantier()->first();
+
+        if (! $chantier instanceof Chantier) {
+            // create() ne remonte pas les défauts SQL (progression, statut,
+            // etape_actuelle) : refresh() obligatoire.
+            $chantier = $this->chantier()->create([])->refresh();
+        }
+
+        foreach (Chantier::defaultTranches() as $tranche) {
+            ChantierTranche::firstOrCreate(
+                ['chantier_id' => $chantier->id, 'num' => $tranche['num']],
+                $tranche,
+            );
+        }
+
+        return $chantier;
     }
 
     /**
@@ -197,6 +227,8 @@ class Client extends Model
 
     /**
      * Le chantier du client.
+     *
+     * @return HasOne<Chantier, $this>
      */
     public function chantier(): HasOne
     {

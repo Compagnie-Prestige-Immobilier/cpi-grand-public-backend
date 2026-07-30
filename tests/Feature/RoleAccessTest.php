@@ -35,6 +35,19 @@ class RoleAccessTest extends TestCase
         return $agent->createToken('t')->plainTextToken;
     }
 
+    private function adminToken(): string
+    {
+        /** @var User $admin */
+        $admin = User::query()->where('email', 'admin@cpi.sn')->firstOrFail();
+
+        return $admin->createToken('t')->plainTextToken;
+    }
+
+    private function forgetAuthState(): void
+    {
+        auth()->forgetGuards();
+    }
+
     public function test_client_token_on_staff_routes_returns_403(): void
     {
         $token = $this->clientToken();
@@ -75,21 +88,34 @@ class RoleAccessTest extends TestCase
             ->assertJsonPath('message', 'Unauthenticated.');
     }
 
-    public function test_staff_role_reaches_the_staff_stub_endpoints(): void
+    /**
+     * Plus aucun squelette : toutes les routes /staff répondent sur le fond
+     * depuis la Phase 7. Le jeu de démonstration en est le dernier exemple, et
+     * il montre les DEUX étages du contrôle d'accès : le middleware `staff`
+     * laisse passer l'agent CPI (ce n'est pas un 403 « Accès personnel CPI
+     * uniquement »), puis la policy le refuse faute de `manage-demo-data`.
+     */
+    public function test_staff_role_reaches_the_demo_endpoints_where_the_policy_decides(): void
     {
-        // Les phases 5-7 ne sont pas implémentées : le middleware laisse passer
-        // le bon rôle et le squelette répond 501.
-        // (/staff/banks est passé en Phase 4 — cf. test_client_token_on_staff_routes_returns_403
-        // qui continue d'y vérifier le 403 côté client.)
-        $this->withToken($this->agentToken())->getJson('/api/staff/historique')
-            ->assertStatus(501)
-            ->assertJsonPath('message', 'Non implémenté');
+        $this->withToken($this->agentToken())->postJson('/api/staff/demo/seed')
+            ->assertStatus(403)
+            ->assertJsonPath('message', 'This action is unauthorized.');
+
+        $this->forgetAuthState();
+        $this->withToken($this->adminToken())->postJson('/api/staff/demo/seed')
+            ->assertOk()
+            ->assertJsonPath('data.clients', 30);
     }
 
-    public function test_client_role_reaches_the_client_stub_endpoints(): void
+    /**
+     * Plus aucun squelette côté client : le middleware `client` doit laisser
+     * passer le bon rôle jusqu'au contrôleur, qui répond alors sur le fond.
+     * Un compte client sans dossier reçoit un 404 explicite, jamais un 403.
+     */
+    public function test_client_role_reaches_the_client_endpoints(): void
     {
         $this->withToken($this->clientToken())->getJson('/api/client/notifications')
-            ->assertStatus(501)
-            ->assertJsonPath('message', 'Non implémenté');
+            ->assertStatus(404)
+            ->assertJsonPath('message', 'Aucun dossier client associé à ce compte.');
     }
 }

@@ -39,4 +39,17 @@ class ClientPolicy
     {
         return $user->hasPermissionTo('delete-client');
     }
+
+    /**
+     * Chargement / purge du jeu de démonstration (POST /staff/demo/seed,
+     * DELETE /staff/demo/clear).
+     *
+     * Capacité de PLATEFORME, pas de dossier : elle s'autorise donc sur la
+     * classe (`authorize('manageDemo', Client::class)`), sans instance. Seul le
+     * super-admin détient `manage-demo-data` — un agent CPI reçoit 403.
+     */
+    public function manageDemo(User $user): bool
+    {
+        return $user->hasPermissionTo('manage-demo-data');
+    }
 }

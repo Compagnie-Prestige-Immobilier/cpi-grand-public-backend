@@ -6,9 +6,11 @@ use App\Dto\ClientData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\RequisDoc;
+use App\Services\DemoDataService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Spatie\LaravelData\PaginatedDataCollection;
 
 class ClientController extends Controller
@@ -218,16 +220,78 @@ class ClientController extends Controller
         return $this->journeyResponse($client);
     }
 
-    // ─── Demo (Phase 7) ───────────────────────────────────────
+    // ─── Démonstration (Phase 7) ──────────────────────────────
 
-    public function seedDemo(): JsonResponse
+    /**
+     * POST /staff/demo/seed — charge 30 dossiers fictifs (STEP 14).
+     *
+     * Réservé à l'administrateur (policy `manageDemo` → permission
+     * `manage-demo-data`, que seul le rôle super-admin détient).
+     *
+     * NON REJOUABLE tant que la démonstration est en place : un second appel
+     * répond 409 au lieu de doubler le jeu de données. C'est le choix le plus
+     * lisible pour l'opérateur — « Supprimer les données de démo » est le seul
+     * chemin de remise à zéro, et aucun état intermédiaire n'est possible.
+     */
+    public function seedDemo(Request $request, DemoDataService $demo): JsonResponse
     {
-        return response()->json(['message' => 'Non implémenté'], 501);
+        $this->authorize('manageDemo', Client::class);
+
+        $existants = $demo->count();
+        if ($existants > 0) {
+            return response()->json([
+                'message' => "Des données de démonstration sont déjà présentes ({$existants} dossier(s)). "
+                    .'Supprimez-les avant d\'en charger de nouvelles.',
+            ], 409);
+        }
+
+        $clients = DB::transaction(fn (): int => $demo->seed());
+
+        activity()
+            ->causedBy($request->user())
+            ->withProperties(['clients' => $clients])
+            ->event('demo-chargee')
+            ->log("{$request->user()?->name} a chargé {$clients} dossiers de démonstration");
+
+        return response()->json([
+            'data' => [
+                'clients' => $clients,
+                'comptes' => $clients,
+                'banques' => 3,
+                'motDePasse' => DemoDataService::PASSWORD,
+            ],
+            'message' => "{$clients} dossiers de démonstration ont été créés.",
+        ]);
     }
 
-    public function clearDemo(): JsonResponse
+    /**
+     * DELETE /staff/demo/clear — purge intégrale de la démonstration.
+     *
+     * Ne touche QUE les lignes préfixées « demo- » et ce qui en dépend : les
+     * vrais dossiers, leurs pièces, leurs chantiers et leur journal restent
+     * intacts (cf. DemoDataTest).
+     */
+    public function clearDemo(Request $request, DemoDataService $demo): JsonResponse
     {
-        return response()->json(['message' => 'Non implémenté'], 501);
+        $this->authorize('manageDemo', Client::class);
+
+        $bilan = DB::transaction(fn (): array => $demo->clear());
+
+        activity()
+            ->causedBy($request->user())
+            ->withProperties($bilan)
+            ->event('demo-supprimee')
+            ->log("{$request->user()?->name} a supprimé {$bilan['clients']} dossiers de démonstration");
+
+        return response()->json([
+            'data' => [
+                'clients' => $bilan['clients'],
+                'comptes' => $bilan['users'],
+                'banques' => $bilan['banks'],
+                'entreesJournal' => $bilan['activites'],
+            ],
+            'message' => "{$bilan['clients']} dossiers de démonstration ont été supprimés.",
+        ]);
     }
 
     // ─── Helpers ──────────────────────────────────────────────
