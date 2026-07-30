@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
@@ -215,7 +216,7 @@ class ChantierMediaTest extends TestCase
         $token = $this->agentToken();
 
         $this->withToken($token)->putJson($this->url($client, '/pas-un-uuid'), ['titre' => 'X'])->assertStatus(404);
-        $this->withToken($token)->deleteJson($this->url($client, '/'.\Illuminate\Support\Str::uuid()))->assertStatus(404);
+        $this->withToken($token)->deleteJson($this->url($client, '/'.Str::uuid()))->assertStatus(404);
     }
 
     // ─── Séparation des rôles ─────────────────────────────────

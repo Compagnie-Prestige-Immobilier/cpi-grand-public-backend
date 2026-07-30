@@ -321,7 +321,7 @@ class ClientController extends Controller
     /**
      * Porté de dossierJourney.ts — le backend est la source de vérité.
      *
-     * @param Collection<int, RequisDoc> $docs
+     * @param  Collection<int, RequisDoc>  $docs
      */
     private function computeJourneyStep(bool $submitted, Collection $docs, int $etapeCpi = 2): int
     {

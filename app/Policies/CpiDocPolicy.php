@@ -17,6 +17,7 @@ class CpiDocPolicy
         if ($user->hasAnyRole(['agent-cpi', 'super-admin'])) {
             return $user->hasPermissionTo('view-cpi-docs');
         }
+
         // Un client ne voit que ses documents rendus visibles.
         return $doc->visible_client && $user->id === $doc->client?->user_id;
     }

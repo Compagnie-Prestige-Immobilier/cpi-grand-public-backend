@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -72,9 +74,9 @@ class Client extends Model
      * Crée les lignes manquantes parmi les trois pièces requises et les renvoie
      * dans l'ordre canonique. Idempotent.
      *
-     * @return \Illuminate\Database\Eloquent\Collection<int, RequisDoc>
+     * @return Collection<int, RequisDoc>
      */
-    public function ensureRequiredDocs(): \Illuminate\Database\Eloquent\Collection
+    public function ensureRequiredDocs(): Collection
     {
         foreach (RequisDoc::REQUIRED as $docId => $label) {
             RequisDoc::firstOrCreate(
@@ -138,7 +140,7 @@ class Client extends Model
     public static function generateRef(): string
     {
         do {
-            $ref = 'CPI-'.now()->year.'-'.strtoupper(\Illuminate\Support\Str::random(5));
+            $ref = 'CPI-'.now()->year.'-'.strtoupper(Str::random(5));
         } while (static::query()->where('ref', $ref)->exists());
 
         return $ref;

@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\GoogleProvider;
 
 class SocialAuthController extends Controller
 {
@@ -21,7 +22,7 @@ class SocialAuthController extends Controller
             return $this->googleNotConfigured();
         }
 
-        /** @var \Laravel\Socialite\Two\GoogleProvider $driver */
+        /** @var GoogleProvider $driver */
         $driver = Socialite::driver('google');
 
         $url = $driver
@@ -43,7 +44,7 @@ class SocialAuthController extends Controller
         }
 
         try {
-            /** @var \Laravel\Socialite\Two\GoogleProvider $driver */
+            /** @var GoogleProvider $driver */
             $driver = Socialite::driver('google');
             $googleUser = $driver->stateless()->user();
         } catch (\Exception) {

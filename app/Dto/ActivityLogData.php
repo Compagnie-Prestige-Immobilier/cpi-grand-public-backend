@@ -28,12 +28,12 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 class ActivityLogData extends Data
 {
     /**
-     * @param array<string, mixed>|null $properties
+     * @param  array<string, mixed>|null  $properties
      */
     public function __construct(
-        public readonly int     $id,            // la table du package garde une PK auto-increment
+        public readonly int $id,            // la table du package garde une PK auto-increment
         public readonly ?string $logName,
-        public readonly string  $description,
+        public readonly string $description,
         public readonly ?string $subjectType,
         public readonly ?string $subjectId,
         public readonly ?string $causerType,
@@ -43,7 +43,7 @@ class ActivityLogData extends Data
         public readonly ?string $clientId,      // subjectId, uniquement quand le sujet est un Client
         public readonly ?string $clientName,    // dénormalisé depuis la relation morph `subject`
         public readonly ?string $event,
-        public readonly ?array  $properties,
+        public readonly ?array $properties,
         public readonly ?string $createdAt,
     ) {}
 

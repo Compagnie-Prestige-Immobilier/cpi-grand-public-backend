@@ -143,11 +143,8 @@ jobs:
     name: Style de code (Pint)
     runs-on: ubuntu-latest
 
-    # Informatif pour l'instant : le préréglage Laravel par défaut reformaterait
-    # l'alignement en colonnes des DTO, qui est un choix délibéré du projet.
-    # Pour rendre ce contrôle bloquant, voir la note en fin de fichier.
-    continue-on-error: true
-
+    # Le code suit le préréglage Laravel par défaut : ce contrôle est bloquant.
+    # En cas d'échec, `vendor/bin/pint` corrige tout sur place en local.
     steps:
       - uses: actions/checkout@v4
 
@@ -170,13 +167,3 @@ jobs:
 
       - name: Pint (vérification seule, aucun fichier modifié)
         run: vendor/bin/pint --test
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Rendre le style bloquant, le jour où vous le souhaitez :
-#   1. lancer `vendor/bin/pint` une fois et commiter le reformatage, ou
-#      ajouter un pint.json désactivant les règles qui touchent l'alignement
-#      des DTO (type_declaration_spaces, phpdoc_align, braces_position,
-#      single_line_empty_body) ;
-#   2. vérifier que `vendor/bin/pint --test` passe ;
-#   3. retirer `continue-on-error: true` du travail « code-style ».
-# ─────────────────────────────────────────────────────────────────────────────

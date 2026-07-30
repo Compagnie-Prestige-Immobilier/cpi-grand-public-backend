@@ -9,12 +9,12 @@ use App\Models\RequisDoc;
 use App\Services\StorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 
 class DocController extends Controller
 {
-    public function __construct(private readonly StorageService $storage)
-    {
-    }
+    public function __construct(private readonly StorageService $storage) {}
 
     // ─── Espace client ────────────────────────────────────────
 
@@ -43,7 +43,7 @@ class DocController extends Controller
             'file' => 'required|file|max:10240|mimes:pdf,jpg,jpeg,png,webp',
         ]);
 
-        /** @var \Illuminate\Http\UploadedFile $file */
+        /** @var UploadedFile $file */
         $file = $validated['file'];
         $version = $docRow->version + 1;
         $path = $this->storage->uploadDoc($client->id, $docRow->doc_id, $file, $version);
@@ -200,7 +200,7 @@ class DocController extends Controller
      * Rattrapage pour les dossiers antérieurs à la création automatique des
      * pièces requises (voir Client::booted).
      *
-     * @return \Illuminate\Support\Collection<int, RequisDoc>
+     * @return Collection<int, RequisDoc>
      */
     private function ensureRequiredDocs(Client $client)
     {

@@ -6,6 +6,7 @@ use App\Models\Bank;
 use App\Models\BankAssignment;
 use App\Models\Chantier;
 use App\Models\ChantierEvent;
+use App\Models\ChantierMedia;
 use App\Models\ChantierPublication;
 use App\Models\ChantierTranche;
 use App\Models\Client;
@@ -17,6 +18,7 @@ use App\Models\RequisDoc;
 use App\Models\User;
 use App\Services\DemoDataService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
@@ -63,7 +65,7 @@ class DemoDataTest extends TestCase
         return Client::query()->where('ref', 'like', DemoDataService::PREFIX.'%')->count();
     }
 
-    private function chargerDemo(): \Illuminate\Testing\TestResponse
+    private function chargerDemo(): TestResponse
     {
         return $this->withToken($this->adminToken())->postJson('/api/staff/demo/seed');
     }
@@ -151,7 +153,7 @@ class DemoDataTest extends TestCase
         $this->chargerDemo()->assertOk();
 
         $this->assertSame(0, RequisDoc::query()->whereNotNull('file_path')->count());
-        $this->assertSame(0, \App\Models\ChantierMedia::query()->count());
+        $this->assertSame(0, ChantierMedia::query()->count());
     }
 
     // ─── Idempotence ──────────────────────────────────────────

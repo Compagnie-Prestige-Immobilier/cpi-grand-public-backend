@@ -13,20 +13,20 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 class UserData extends Data
 {
     /**
-     * @param string[] $permissions
+     * @param  string[]  $permissions
      */
     public function __construct(
-        public readonly string  $id,
-        public readonly string  $name,
-        public readonly string  $email,
+        public readonly string $id,
+        public readonly string $name,
+        public readonly string $email,
         public readonly ?string $phone,
         public readonly ?string $employer,
         public readonly ?string $profileType,
         public readonly ?string $revenus,
         public readonly ?string $avatar,
-        public readonly bool    $needsOnboarding,
+        public readonly bool $needsOnboarding,
         public readonly ?string $role,          // nom du rôle Spatie : client / agent-cpi / super-admin
-        public readonly array   $permissions,   // permissions résolues côté serveur (getAllPermissions)
+        public readonly array $permissions,   // permissions résolues côté serveur (getAllPermissions)
         public readonly ?string $clientId = null, // id de la fiche Client associée (utilisateurs clients)
     ) {}
 

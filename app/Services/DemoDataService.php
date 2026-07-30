@@ -6,6 +6,9 @@ use App\Models\Bank;
 use App\Models\BankAssignment;
 use App\Models\Client;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
@@ -201,7 +204,7 @@ class DemoDataService
 
         $users = 0;
         if ($userIds !== []) {
-            /** @var \Illuminate\Database\Eloquent\Collection<int, User> $comptes */
+            /** @var Collection<int, User> $comptes */
             $comptes = User::query()->whereIn('id', $userIds)->get();
             foreach ($comptes as $compte) {
                 $compte->tokens()->delete();
@@ -225,9 +228,9 @@ class DemoDataService
     // ─── Fabrique ─────────────────────────────────────────────
 
     /**
-     * @return \Illuminate\Database\Eloquent\Builder<Client>
+     * @return Builder<Client>
      */
-    private function demoClients(): \Illuminate\Database\Eloquent\Builder
+    private function demoClients(): Builder
     {
         return Client::query()->where('ref', 'like', self::PREFIX.'%');
     }
@@ -257,8 +260,8 @@ class DemoDataService
      * Un dossier complet : compte de connexion, dossier, demande, pièces,
      * document CPI, orientation bancaire, décaissement, chantier, notification.
      *
-     * @param array{profil: string, count: int, statut: string, progression: int, etape: int, docs: string} $groupe
-     * @param list<Bank> $banques
+     * @param  array{profil: string, count: int, statut: string, progression: int, etape: int, docs: string}  $groupe
+     * @param  list<Bank>  $banques
      */
     private function creerDossier(int $i, array $groupe, array $banques): void
     {
@@ -315,7 +318,7 @@ class DemoDataService
     }
 
     /**
-     * @param array{profil: string, count: int, statut: string, progression: int, etape: int, docs: string} $groupe
+     * @param  array{profil: string, count: int, statut: string, progression: int, etape: int, docs: string}  $groupe
      */
     private function creerDemande(
         Client $client,
@@ -323,7 +326,7 @@ class DemoDataService
         string $commune,
         int $montant,
         int $i,
-        \Illuminate\Support\Carbon $inscription,
+        Carbon $inscription,
     ): void {
         $soumise = $groupe['profil'] !== 'inscription';
 
@@ -347,13 +350,13 @@ class DemoDataService
      * avancer. Un dossier « à vérifier » sur trois voit sa pièce bancaire
      * refusée — l'écran de traitement doit aussi montrer ce cas.
      *
-     * @param array{profil: string, count: int, statut: string, progression: int, etape: int, docs: string} $groupe
+     * @param  array{profil: string, count: int, statut: string, progression: int, etape: int, docs: string}  $groupe
      */
     private function preparerPieces(
         Client $client,
         array $groupe,
         int $i,
-        \Illuminate\Support\Carbon $inscription,
+        Carbon $inscription,
     ): void {
         if ($groupe['docs'] === 'en-attente') {
             return;
@@ -390,7 +393,7 @@ class DemoDataService
         Client $client,
         string $profil,
         string $numero,
-        \Illuminate\Support\Carbon $inscription,
+        Carbon $inscription,
     ): void {
         $etats = [
             'analyse' => ['status' => 'disponible', 'signature' => false],
@@ -437,7 +440,7 @@ class DemoDataService
     }
 
     /**
-     * @param list<Bank> $banques
+     * @param  list<Bank>  $banques
      */
     private function orienterVersBanque(Client $client, string $profil, array $banques, int $i): void
     {
@@ -601,13 +604,13 @@ class DemoDataService
         Client $client,
         User $user,
         string $profil,
-        \Illuminate\Support\Carbon $inscription,
+        Carbon $inscription,
     ): void {
         $messages = [
             'documents' => ['Pièces reçues', 'Vos pièces justificatives sont en cours de vérification par votre conseiller.', 'info', 'mon-dossier'],
-            'analyse' => ['Dossier transmis à la banque', "Votre dossier a été orienté vers une banque partenaire pour analyse.", 'validation', 'mon-dossier'],
+            'analyse' => ['Dossier transmis à la banque', 'Votre dossier a été orienté vers une banque partenaire pour analyse.', 'validation', 'mon-dossier'],
             'signature' => ['Contrat à signer', 'Votre contrat de réservation est disponible : merci de le signer en ligne.', 'action', 'mon-dossier'],
-            'construction' => ['Chantier en cours', "Une nouvelle publication est disponible sur le fil de votre chantier.", 'info', 'mon-chantier'],
+            'construction' => ['Chantier en cours', 'Une nouvelle publication est disponible sur le fil de votre chantier.', 'info', 'mon-chantier'],
             'livre' => ['Logement livré', 'Votre logement a été réceptionné. Félicitations !', 'validation', 'mon-chantier'],
         ];
 

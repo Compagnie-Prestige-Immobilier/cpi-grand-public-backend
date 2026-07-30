@@ -18,13 +18,13 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 class ChantierTrancheData extends Data
 {
     public function __construct(
-        public readonly string  $id,
-        public readonly string  $chantierId,
-        public readonly int     $num,
-        public readonly string  $label,
+        public readonly string $id,
+        public readonly string $chantierId,
+        public readonly int $num,
+        public readonly string $label,
         public readonly ?string $description,
-        public readonly int     $pct,
-        public readonly string  $etat,        // terminee, en-cours, en-attente
+        public readonly int $pct,
+        public readonly string $etat,        // terminee, en-cours, en-attente
         public readonly ?string $date,
         public readonly ?string $comment,
     ) {}

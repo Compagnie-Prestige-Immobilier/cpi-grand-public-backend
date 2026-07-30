@@ -66,7 +66,7 @@ class StorageService
 
             throw new ServiceUnavailableHttpException(
                 null,
-                "Le stockage des documents est momentanément indisponible. Merci de réessayer dans quelques instants.",
+                'Le stockage des documents est momentanément indisponible. Merci de réessayer dans quelques instants.',
                 $e,
             );
         }

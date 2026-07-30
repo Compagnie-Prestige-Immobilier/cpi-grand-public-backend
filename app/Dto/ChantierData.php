@@ -21,14 +21,14 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 class ChantierData extends Data
 {
     /**
-     * @param ChantierTrancheData[]|null $tranches
-     * @param ChantierPublicationData[]|null $publications
-     * @param ChantierMediaData[]|null $medias
-     * @param ChantierEventData[]|null $events
+     * @param  ChantierTrancheData[]|null  $tranches
+     * @param  ChantierPublicationData[]|null  $publications
+     * @param  ChantierMediaData[]|null  $medias
+     * @param  ChantierEventData[]|null  $events
      */
     public function __construct(
-        public readonly string  $id,
-        public readonly string  $clientId,
+        public readonly string $id,
+        public readonly string $clientId,
         public readonly ?string $projet,
         public readonly ?string $reference,
         public readonly ?string $localisation,
@@ -36,17 +36,17 @@ class ChantierData extends Data
         public readonly ?string $entreprise,
         public readonly ?string $dateDebut,
         public readonly ?string $dateLivraison,
-        public readonly int     $progression,
-        public readonly string  $etapeActuelle,
-        public readonly string  $statut,
+        public readonly int $progression,
+        public readonly string $etapeActuelle,
+        public readonly string $statut,
         public readonly ?string $derniereMaj,
         #[DataCollectionOf(ChantierTrancheData::class)]
-        public readonly ?array  $tranches = null,
+        public readonly ?array $tranches = null,
         #[DataCollectionOf(ChantierPublicationData::class)]
-        public readonly ?array  $publications = null,
+        public readonly ?array $publications = null,
         #[DataCollectionOf(ChantierMediaData::class)]
-        public readonly ?array  $medias = null,
+        public readonly ?array $medias = null,
         #[DataCollectionOf(ChantierEventData::class)]
-        public readonly ?array  $events = null,
+        public readonly ?array $events = null,
     ) {}
 }

@@ -28,22 +28,22 @@ class ChantierMediaData extends Data
     public ?string $fileUrl;
 
     public function __construct(
-        public readonly string  $id,
-        public readonly string  $chantierId,
-        public readonly string  $type,        // photo, video
-        public readonly string  $titre,
+        public readonly string $id,
+        public readonly string $chantierId,
+        public readonly string $type,        // photo, video
+        public readonly string $titre,
         public readonly ?string $description,
         public readonly ?string $date,
-        public readonly int     $phase,
-        public readonly string  $auteur,
+        public readonly int $phase,
+        public readonly string $auteur,
         public readonly ?string $bg,
-        public readonly bool    $visibleClient,
+        public readonly bool $visibleClient,
         // Les DEUX attributs sont nécessaires : `Data\Hidden` retire la clé de
         // la réponse JSON, `TypeScript\Hidden` la retire du type généré. Sans
         // le second, generated.d.ts annoncerait un champ qui n'existe pas.
         #[Hidden]
         #[TypeScriptHidden]
-        public readonly string  $url = '',    // clé R2 privée — jamais exposée
+        public readonly string $url = '',    // clé R2 privée — jamais exposée
     ) {
         $this->fileUrl = $url === ''
             ? null

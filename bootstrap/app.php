@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\ClientAuth;
+use App\Http\Middleware\StaffAuth;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -14,8 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'client' => \App\Http\Middleware\ClientAuth::class,
-            'staff' => \App\Http\Middleware\StaffAuth::class,
+            'client' => ClientAuth::class,
+            'staff' => StaffAuth::class,
         ]);
 
         // Backend purement API : aucune route `login` nommée. Sans ceci le

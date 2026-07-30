@@ -18,6 +18,7 @@ class RequisDocPolicy
         if ($user->hasAnyRole(['agent-cpi', 'super-admin'])) {
             return $user->hasPermissionTo('view-documents');
         }
+
         return $user->id === $doc->client?->user_id;
     }
 

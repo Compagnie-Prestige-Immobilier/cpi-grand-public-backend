@@ -85,7 +85,7 @@ class HistoriqueController extends Controller
      * `loadMorph` est la forme prévue par le framework pour charger une
      * relation qui n'existe que sur certains des types visés.
      *
-     * @param Collection<int, Activity> $activities
+     * @param  Collection<int, Activity>  $activities
      */
     private function chargerRolesDesAuteurs(Collection $activities): void
     {

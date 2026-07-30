@@ -18,14 +18,14 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 class ChantierEventData extends Data
 {
     public function __construct(
-        public readonly string  $id,
-        public readonly string  $chantierId,
-        public readonly string  $titre,
-        public readonly string  $type,
+        public readonly string $id,
+        public readonly string $chantierId,
+        public readonly string $titre,
+        public readonly string $type,
         public readonly ?string $date,
         public readonly ?string $heure,
-        public readonly string  $description,
-        public readonly string  $statut,      // prevu, confirme, realise, reporte, annule
-        public readonly bool    $visibleClient,
+        public readonly string $description,
+        public readonly string $statut,      // prevu, confirme, realise, reporte, annule
+        public readonly bool $visibleClient,
     ) {}
 }

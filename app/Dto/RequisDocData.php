@@ -21,15 +21,15 @@ class RequisDocData extends Data
     public ?string $fileUrl;
 
     public function __construct(
-        public readonly string  $id,
-        public readonly string  $clientId,
-        public readonly string  $docId,          // identite, revenus, bancaires
-        public readonly string  $label,
-        public readonly string  $status,
+        public readonly string $id,
+        public readonly string $clientId,
+        public readonly string $docId,          // identite, revenus, bancaires
+        public readonly string $label,
+        public readonly string $status,
         public readonly ?string $commentaire,
         public readonly ?string $dateValidation,
         public readonly ?string $agentName,
-        public readonly int     $version,
+        public readonly int $version,
         public readonly ?string $submittedLabel,
         public readonly ?string $date,
         public readonly ?string $taille,

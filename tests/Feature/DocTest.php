@@ -40,7 +40,7 @@ class DocTest extends TestCase
     /**
      * Place une pièce requise (créée d'office avec le client) dans un état donné.
      *
-     * @param array<string, mixed> $attrs
+     * @param  array<string, mixed>  $attrs
      */
     private function setDocState(Client $client, string $docId, array $attrs): void
     {

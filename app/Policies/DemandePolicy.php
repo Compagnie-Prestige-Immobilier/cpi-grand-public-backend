@@ -13,6 +13,7 @@ class DemandePolicy
         if ($user->hasAnyRole(['agent-cpi', 'super-admin'])) {
             return $user->hasPermissionTo('view-clients');
         }
+
         return $user->id === $demande->client?->user_id;
     }
 

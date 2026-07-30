@@ -9,6 +9,7 @@ use App\Models\Client;
 use App\Services\StorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -25,9 +26,7 @@ use Illuminate\Validation\Rule;
  */
 class ChantierMediaController extends Controller
 {
-    public function __construct(private readonly StorageService $storage)
-    {
-    }
+    public function __construct(private readonly StorageService $storage) {}
 
     /**
      * GET /staff/chantiers/{client}/medias
@@ -64,10 +63,10 @@ class ChantierMediaController extends Controller
 
         // L'identifiant est tiré AVANT l'envoi : le chemin R2 le contient, et un
         // stockage en échec (503) ne doit laisser aucune ligne orpheline.
-        $media = new ChantierMedia();
+        $media = new ChantierMedia;
         $id = $media->newUniqueId();
 
-        /** @var \Illuminate\Http\UploadedFile $file */
+        /** @var UploadedFile $file */
         $file = $validated['file'];
         $path = $this->storage->uploadChantierMedia($client->id, $id, $file);
 

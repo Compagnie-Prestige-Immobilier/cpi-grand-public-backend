@@ -18,6 +18,7 @@ class ClientPolicy
         if ($user->hasAnyRole(['agent-cpi', 'super-admin'])) {
             return $user->hasPermissionTo('view-clients');
         }
+
         return $user->id === $client->user_id;
     }
 
@@ -32,6 +33,7 @@ class ClientPolicy
         if ($user->hasAnyRole(['agent-cpi', 'super-admin'])) {
             return $user->hasPermissionTo('edit-client');
         }
+
         return $user->id === $client->user_id;
     }
 

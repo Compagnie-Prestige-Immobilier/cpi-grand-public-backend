@@ -15,7 +15,7 @@ class StorageServiceTest extends TestCase
         Storage::fake('r2');
         $file = UploadedFile::fake()->create('piece.pdf', 10);
 
-        $path = (new StorageService())->uploadDoc('client-1', 'identite', $file, 2);
+        $path = (new StorageService)->uploadDoc('client-1', 'identite', $file, 2);
 
         $this->assertSame('docs/client-1/identite_v2.pdf', $path);
         Storage::disk('r2')->assertExists($path);
@@ -29,7 +29,7 @@ class StorageServiceTest extends TestCase
         );
 
         try {
-            (new StorageService())->uploadDoc('client-1', 'identite', UploadedFile::fake()->create('p.pdf', 10), 1);
+            (new StorageService)->uploadDoc('client-1', 'identite', UploadedFile::fake()->create('p.pdf', 10), 1);
             $this->fail('Une exception HTTP était attendue.');
         } catch (ServiceUnavailableHttpException $e) {
             $this->assertSame(503, $e->getStatusCode());
@@ -43,7 +43,7 @@ class StorageServiceTest extends TestCase
         Storage::fake('r2');
         $file = UploadedFile::fake()->create('contrat.pdf', 10);
 
-        $service = new StorageService();
+        $service = new StorageService;
         $path = $service->uploadCpiDoc('client-1', 'doc-9', $file);
 
         $this->assertSame('cpi-docs/client-1/doc-9.pdf', $path);
