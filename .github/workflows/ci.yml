@@ -1,0 +1,182 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Une seule exécution par branche : un nouveau push annule la précédente.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PHP_VERSION: '8.3'
+  # Les extensions réellement utilisées : SQLite pour la suite de tests
+  # (phpunit.xml force :memory:), PostgreSQL pour le contrôle des migrations.
+  PHP_EXTENSIONS: mbstring, bcmath, intl, curl, dom, fileinfo, zip, pdo, pdo_sqlite, sqlite3, pdo_pgsql
+
+jobs:
+  tests:
+    name: Tests (PHPUnit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+
+      - name: Cache des dépendances Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-
+
+      - name: Installer les dépendances
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Préparer l'environnement
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # La suite tourne sur SQLite en mémoire et simule le disque R2
+      # (cf. tests/TestCase.php) : aucun secret n'est nécessaire.
+      - name: Lancer la suite de tests
+        run: php artisan test
+
+  static-analysis:
+    name: Analyse statique (PHPStan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+
+      - name: Cache des dépendances Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-
+
+      - name: Installer les dépendances
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Préparer l'environnement
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: PHPStan (niveau 5)
+        run: vendor/bin/phpstan analyse --no-progress --error-format=github
+
+  migrations:
+    name: Migrations PostgreSQL
+    runs-on: ubuntu-latest
+
+    # Les tests tournent sur SQLite ; ce travail rejoue le schéma sur le SGBD
+    # réellement utilisé en développement et en production. Il attrape ce que
+    # SQLite ne peut pas voir : colonnes uuid, contraintes, types PostgreSQL.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: laravel
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+
+      - name: Cache des dépendances Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-
+
+      - name: Installer les dépendances
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Préparer l'environnement
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Rejouer le schéma et les données de départ
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: laravel
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+        run: php artisan migrate:fresh --seed --force
+
+  code-style:
+    name: Style de code (Pint)
+    runs-on: ubuntu-latest
+
+    # Informatif pour l'instant : le préréglage Laravel par défaut reformaterait
+    # l'alignement en colonnes des DTO, qui est un choix délibéré du projet.
+    # Pour rendre ce contrôle bloquant, voir la note en fin de fichier.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+
+      - name: Cache des dépendances Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-
+
+      - name: Installer les dépendances
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Pint (vérification seule, aucun fichier modifié)
+        run: vendor/bin/pint --test
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rendre le style bloquant, le jour où vous le souhaitez :
+#   1. lancer `vendor/bin/pint` une fois et commiter le reformatage, ou
+#      ajouter un pint.json désactivant les règles qui touchent l'alignement
+#      des DTO (type_declaration_spaces, phpdoc_align, braces_position,
+#      single_line_empty_body) ;
+#   2. vérifier que `vendor/bin/pint --test` passe ;
+#   3. retirer `continue-on-error: true` du travail « code-style ».
+# ─────────────────────────────────────────────────────────────────────────────
