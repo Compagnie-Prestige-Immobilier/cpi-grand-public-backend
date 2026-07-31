@@ -6,13 +6,17 @@ use App\Dto\UserData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\User;
+use App\Services\StorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
+    public function __construct(private readonly StorageService $storage) {}
+
     /**
      * POST /auth/register — inscription client (email + mot de passe).
      */
@@ -129,6 +133,51 @@ class AuthController extends Controller
                 'user' => UserData::from($user->refresh()),
             ],
         ]);
+    }
+
+    /**
+     * POST /auth/avatar — photo de profil (multipart), tout utilisateur authentifié.
+     *
+     * Stockée sur R2 (privé) sous avatars/{userId}.{ext}, servie via `avatarUrl`
+     * signée dans UserData. Remplace le stockage localStorage côté frontend.
+     */
+    public function updateAvatar(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'file' => 'required|file|max:5120|mimes:jpg,jpeg,png,webp',
+        ]);
+
+        /** @var UploadedFile $file */
+        $file = $validated['file'];
+
+        // Remplacement : ne supprimer que les fichiers R2 (jamais une URL Google).
+        if ($user->avatar !== null && ! str_starts_with($user->avatar, 'http')) {
+            $this->storage->delete($user->avatar);
+        }
+
+        $user->update([
+            'avatar' => $this->storage->uploadAvatar($user->id, $file),
+        ]);
+
+        return response()->json(['data' => UserData::from($user->refresh())]);
+    }
+
+    /**
+     * DELETE /auth/avatar — retire la photo de profil.
+     */
+    public function removeAvatar(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->avatar !== null && ! str_starts_with($user->avatar, 'http')) {
+            $this->storage->delete($user->avatar);
+        }
+
+        $user->update(['avatar' => null]);
+
+        return response()->json(['data' => UserData::from($user->refresh())]);
     }
 
     /**

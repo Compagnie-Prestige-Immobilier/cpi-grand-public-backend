@@ -1,0 +1,39 @@
+# Everything here stays out of the build context. Without this file the daemon
+# has to ship storage/logs and the local vendor/ tree on every build.
+
+.git
+.gitignore
+.github
+
+# Local dependency trees — the image builds its own with --no-dev.
+vendor
+node_modules
+
+# Runtime state — only the directory skeleton is created in the image.
+storage/app/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+bootstrap/cache/*
+
+# Secrets and local config must come from the deploy environment, never baked in.
+.env
+.env.*
+!.env.example
+
+# Dev-only tooling and docs.
+tests
+phpunit.xml
+.phpunit.result.cache
+.phpunit.cache
+phpstan.neon
+pint.json
+docker-compose*.yml
+docker-compose*.yaml
+Dockerfile
+.dockerignore
+*.md
+.idea
+.vscode
+.DS_Store

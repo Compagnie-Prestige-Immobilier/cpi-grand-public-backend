@@ -12,7 +12,8 @@ Laravel 13 · PHP 8.3 · PostgreSQL. Réponses JSON, messages en français.
 
 ## Structure
 
-- Routes publiques: inscription, connexion, connexion Google, complétion de profil.
+- Routes publiques: inscription, connexion, connexion Google.
+- Routes `/api/auth/*` authentifiées, communes à tous les comptes: session, complétion de profil, photo de profil.
 - Routes `/api/client/*`: réservées au titulaire d'un dossier — son profil, sa demande, ses pièces, ses documents, son chantier, ses banques, ses notifications.
 - Routes `/api/staff/*`: réservées au personnel CPI (agent ou administrateur) — instruction des dossiers, documents, banques, décaissements, chantiers, notifications, historique, statistiques.
 

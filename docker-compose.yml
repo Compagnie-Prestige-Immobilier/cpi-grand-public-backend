@@ -1,0 +1,98 @@
+# =============================================================================
+# CPI API — full stack
+#
+#   app       nginx + php-fpm (the only container that serves HTTP)
+#   postgres  source de vérité unique
+#   redis     cache + sessions (queues the day they exist)
+#
+# Unlike the synka-sphere reference (managed DB, separate db compose), CPI runs
+# everything in one file: one network, no cross-compose wiring to get wrong.
+# Files (documents, avatars, médias chantier) live on Cloudflare R2, so no
+# storage volume is needed — the containers are fully disposable.
+#
+#   cp docker.env.example .env   # then fill in APP_KEY, R2 + Google credentials
+#   docker compose up -d --build
+# =============================================================================
+
+name: cpi
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cpi-api:latest
+    container_name: cpi_api
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Loopback only: the TLS proxy on the host terminates HTTPS and forwards
+    # here. Override APP_PORT to move the port.
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:80"
+    environment:
+      # This is the container that owns the schema (migrate + seed at boot).
+      RUN_MIGRATIONS: "true"
+      # No queued jobs or scheduled tasks yet — see docker/supervisord.conf.
+      RUN_QUEUE_WORKER: "false"
+      RUN_SCHEDULER: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cpi
+    # Cap log growth — a chatty container can otherwise fill the VPS disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  postgres:
+    image: postgres:17
+    container_name: cpi_postgres
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-cpi}
+      POSTGRES_USER: ${DB_USERNAME:-cpi}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-cpi} -d ${DB_DATABASE:-cpi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cpi
+    # Not exposed to the host: only the app container talks to it. Uncomment for
+    # local inspection with psql/TablePlus.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  redis:
+    image: redis:7
+    container_name: cpi_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cpi
+
+volumes:
+  pgdata:
+
+networks:
+  cpi:
+    driver: bridge

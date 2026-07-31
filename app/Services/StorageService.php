@@ -40,6 +40,14 @@ class StorageService
     }
 
     /**
+     * Photo de profil : avatars/{userId}.{ext}
+     */
+    public function uploadAvatar(string $userId, UploadedFile $file): string
+    {
+        return $this->put("avatars/{$userId}.".$file->getClientOriginalExtension(), $file);
+    }
+
+    /**
      * URL signée de courte durée — la SEULE façon de servir les fichiers.
      */
     public function temporaryUrl(string $path, int $minutes = 15): string

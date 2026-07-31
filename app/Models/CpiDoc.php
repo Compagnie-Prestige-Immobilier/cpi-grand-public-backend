@@ -26,6 +26,7 @@ class CpiDoc extends Model
         'status',
         'auteur',
         'fichier',
+        'file_path',
         'commentaire',
         'visible_client',
         'signature_requise',

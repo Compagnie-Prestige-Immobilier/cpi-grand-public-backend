@@ -6,13 +6,17 @@ use App\Dto\CpiDocData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\CpiDoc;
+use App\Services\StorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\QueryBuilder;
 
 class CpiDocController extends Controller
 {
+    public function __construct(private readonly StorageService $storage) {}
+
     // ─── Espace client ────────────────────────────────────────
 
     /**
@@ -137,11 +141,69 @@ class CpiDocController extends Controller
     }
 
     /**
+     * POST /staff/cpi-docs/{cpiDoc}/upload — dépôt du fichier réel (multipart).
+     *
+     * `fichier` reste le libellé affiché ; le fichier vit sur R2 (privé) sous
+     * cpi-docs/{clientId}/{docId}.{ext} et n'est servi que via lien signé.
+     */
+    public function upload(Request $request, CpiDoc $cpiDoc): JsonResponse
+    {
+        $this->authorize('update', $cpiDoc);
+
+        $validated = $request->validate([
+            'file' => 'required|file|max:10240|mimes:pdf,doc,docx,jpg,jpeg,png,webp',
+        ]);
+
+        /** @var UploadedFile $file */
+        $file = $validated['file'];
+
+        // Remplacement : l'ancien fichier ne doit pas rester orphelin sur R2
+        // (l'extension peut changer, donc le chemin aussi).
+        if ($cpiDoc->file_path !== null) {
+            $this->storage->delete($cpiDoc->file_path);
+        }
+
+        $path = $this->storage->uploadCpiDoc($cpiDoc->client_id, $cpiDoc->id, $file);
+
+        $cpiDoc->update([
+            'file_path' => $path,
+            'fichier' => $file->getClientOriginalName(),
+            'taille' => $this->humanSize($file->getSize()),
+            'format' => strtoupper($file->getClientOriginalExtension()),
+        ]);
+
+        activity()
+            ->causedBy($request->user())
+            ->performedOn($cpiDoc->client)
+            ->withProperties(['cpi_doc_id' => $cpiDoc->id])
+            ->event('cpi-doc-fichier')
+            ->log("{$request->user()?->name} a joint un fichier au document {$cpiDoc->nom}");
+
+        return response()->json(['data' => CpiDocData::from($cpiDoc->refresh())]);
+    }
+
+    private function humanSize(int $bytes): string
+    {
+        if ($bytes >= 1048576) {
+            return number_format($bytes / 1048576, 1, ',', ' ').' Mo';
+        }
+        if ($bytes >= 1024) {
+            return number_format($bytes / 1024, 0, ',', ' ').' Ko';
+        }
+
+        return $bytes.' o';
+    }
+
+    /**
      * DELETE /staff/cpi-docs/{cpiDoc} — réservé au super-admin.
      */
     public function destroy(Request $request, CpiDoc $cpiDoc): JsonResponse
     {
         $this->authorize('delete', $cpiDoc);
+
+        if ($cpiDoc->file_path !== null) {
+            $this->storage->delete($cpiDoc->file_path);
+        }
 
         activity()
             ->causedBy($request->user())

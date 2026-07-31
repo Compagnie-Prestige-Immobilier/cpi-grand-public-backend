@@ -38,6 +38,8 @@ Route::post('/auth/google/callback', [SocialAuthController::class, 'handleGoogle
 
 // Onboarding: Google users with incomplete profiles must fill this before accessing the app
 Route::post('/auth/onboarding', [AuthController::class, 'completeOnboarding'])->middleware('auth:sanctum');
+Route::post('/auth/avatar', [AuthController::class, 'updateAvatar'])->middleware('auth:sanctum');
+Route::delete('/auth/avatar', [AuthController::class, 'removeAvatar'])->middleware('auth:sanctum');
 Route::get('/auth/onboarding-status', [AuthController::class, 'onboardingStatus'])->middleware('auth:sanctum');
 
 /*
@@ -118,6 +120,7 @@ Route::middleware(['auth:sanctum', 'staff'])->prefix('staff')->group(function ()
     Route::post('/cpi-docs', [CpiDocController::class, 'store']);
     Route::put('/cpi-docs/{cpiDoc}', [CpiDocController::class, 'update']);
     Route::delete('/cpi-docs/{cpiDoc}', [CpiDocController::class, 'destroy']);
+    Route::post('/cpi-docs/{cpiDoc}/upload', [CpiDocController::class, 'upload']);
     Route::post('/cpi-docs/{cpiDoc}/publish', [CpiDocController::class, 'publish']);
     Route::post('/cpi-docs/{cpiDoc}/archive', [CpiDocController::class, 'archive']);
     Route::post('/cpi-docs/{cpiDoc}/sign', [CpiDocController::class, 'sign']);

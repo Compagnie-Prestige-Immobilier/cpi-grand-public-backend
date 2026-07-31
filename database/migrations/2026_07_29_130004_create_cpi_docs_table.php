@@ -23,6 +23,7 @@ return new class extends Migration
             $table->string('status')->default('brouillon');
             $table->string('auteur');
             $table->string('fichier')->nullable();
+            $table->string('file_path')->nullable(); // chemin R2 du fichier réel (fichier = libellé affiché)
             $table->text('commentaire')->nullable();
             $table->boolean('visible_client')->default(false);
             $table->boolean('signature_requise')->default(false);

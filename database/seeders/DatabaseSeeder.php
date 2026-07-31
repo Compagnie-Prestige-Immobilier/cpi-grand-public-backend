@@ -16,19 +16,22 @@ class DatabaseSeeder extends Seeder
         // Run Spatie permission seeder first
         $this->call(RoleAndPermissionSeeder::class);
 
-        // Create built-in staff accounts
-        $agent = User::create([
-            'name' => 'Agent CPI',
-            'email' => 'agent@cpi.sn',
-            'password' => Hash::make('agent1234'),
-        ]);
-        $agent->assignRole('agent-cpi');
+        // Comptes intégrés — firstOrCreate : le seeder tourne à chaque démarrage
+        // du conteneur (docker-entrypoint) sans jamais dupliquer ni écraser.
+        $agent = User::firstOrCreate(
+            ['email' => 'agent@cpi.sn'],
+            ['name' => 'Agent CPI', 'password' => Hash::make('agent1234')],
+        );
+        if (! $agent->hasRole('agent-cpi')) {
+            $agent->assignRole('agent-cpi');
+        }
 
-        $admin = User::create([
-            'name' => 'Administrateur CPI',
-            'email' => 'admin@cpi.sn',
-            'password' => Hash::make('admin1234'),
-        ]);
-        $admin->assignRole('super-admin');
+        $admin = User::firstOrCreate(
+            ['email' => 'admin@cpi.sn'],
+            ['name' => 'Administrateur CPI', 'password' => Hash::make('admin1234')],
+        );
+        if (! $admin->hasRole('super-admin')) {
+            $admin->assignRole('super-admin');
+        }
     }
 }

@@ -39,16 +39,18 @@ class RoleAndPermissionSeeder extends Seeder
             'view-own-profile', 'edit-own-profile',
         ];
 
+        // firstOrCreate : le seeder est idempotent — il tourne à chaque démarrage
+        // du conteneur (docker-entrypoint), pas seulement après migrate:fresh.
         foreach ($permissions as $permission) {
-            Permission::create(['name' => $permission, 'guard_name' => 'web']);
+            Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
         }
 
         // ─── Roles ─────────────────────────────────────────────
-        $superAdmin = Role::create(['name' => 'super-admin', 'guard_name' => 'web']);
-        $superAdmin->givePermissionTo(Permission::all());
+        $superAdmin = Role::firstOrCreate(['name' => 'super-admin', 'guard_name' => 'web']);
+        $superAdmin->syncPermissions(Permission::all());
 
-        $agentCpi = Role::create(['name' => 'agent-cpi', 'guard_name' => 'web']);
-        $agentCpi->givePermissionTo([
+        $agentCpi = Role::firstOrCreate(['name' => 'agent-cpi', 'guard_name' => 'web']);
+        $agentCpi->syncPermissions([
             'view-clients', 'create-client', 'edit-client',
             'view-documents', 'validate-documents', 'manage-documents',
             'view-cpi-docs', 'create-cpi-docs', 'publish-cpi-docs',
@@ -60,8 +62,8 @@ class RoleAndPermissionSeeder extends Seeder
             'view-own-profile', 'edit-own-profile',
         ]);
 
-        $client = Role::create(['name' => 'client', 'guard_name' => 'web']);
-        $client->givePermissionTo([
+        $client = Role::firstOrCreate(['name' => 'client', 'guard_name' => 'web']);
+        $client->syncPermissions([
             'upload-documents', 'view-documents', 'sign-documents',
             'view-cpi-docs', 'sign-cpi-docs',
             'view-banks', 'view-chantier', 'view-notifications',

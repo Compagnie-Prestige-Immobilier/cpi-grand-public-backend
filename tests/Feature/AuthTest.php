@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Client;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class AuthTest extends TestCase
@@ -41,6 +43,49 @@ class AuthTest extends TestCase
         /** @var Client $client */
         $client = Client::query()->where('user_id', $user->id)->firstOrFail();
         $this->assertStringStartsWith('CPI-'.now()->year.'-', $client->ref);
+    }
+
+    public function test_register_ignores_any_injected_role_and_always_creates_a_client(): void
+    {
+        // Un inscrit est TOUJOURS client — jamais agent ni admin. Un payload
+        // hostile glissant role / needs_onboarding / google_id est ignoré :
+        // seuls les champs validés atteignent User::create, le rôle est codé en dur.
+        $this->postJson('/api/auth/register', [
+            'name' => 'Intrus Malin',
+            'email' => 'intrus@example.com',
+            'password' => 'secret1234',
+            'role' => 'super-admin',
+            'roles' => ['super-admin'],
+            'needs_onboarding' => false,
+            'google_id' => 'fake-google-id',
+        ])->assertStatus(201)->assertJsonPath('data.role', 'client');
+
+        /** @var User $user */
+        $user = User::query()->where('email', 'intrus@example.com')->firstOrFail();
+        $this->assertSame(['client'], $user->getRoleNames()->all());
+        $this->assertFalse($user->hasPermissionTo('manage-staff'));
+        $this->assertNull($user->google_id);
+    }
+
+    public function test_onboarding_cannot_change_the_role(): void
+    {
+        $token = $this->postJson('/api/auth/register', [
+            'name' => 'Awa Ndiaye',
+            'email' => 'awa@example.com',
+            'password' => 'secret1234',
+        ])->json('data.token');
+
+        $this->withToken($token)->postJson('/api/auth/onboarding', [
+            'phone' => '+221770000000',
+            'employer' => 'Sonatel',
+            'profile_type' => 'prive',
+            'revenus' => '250000-400000',
+            'role' => 'super-admin',
+        ])->assertOk();
+
+        /** @var User $user */
+        $user = User::query()->where('email', 'awa@example.com')->firstOrFail();
+        $this->assertSame(['client'], $user->getRoleNames()->all());
     }
 
     public function test_register_rejects_duplicate_email(): void
@@ -242,5 +287,91 @@ class AuthTest extends TestCase
     {
         $this->postJson('/api/auth/onboarding', [])->assertStatus(401);
         $this->getJson('/api/auth/onboarding-status')->assertStatus(401);
+    }
+
+    // ─── Photo de profil ──────────────────────────────────────
+
+    public function test_user_can_upload_an_avatar_served_via_signed_url(): void
+    {
+        $token = $this->postJson('/api/auth/register', [
+            'name' => 'Awa Ndiaye',
+            'email' => 'awa@example.com',
+            'password' => 'secret1234',
+        ])->json('data.token');
+
+        $response = $this->withToken($token)->postJson('/api/auth/avatar', [
+            'file' => UploadedFile::fake()->create('photo.png', 80, 'image/png'),
+        ]);
+
+        /** @var User $user */
+        $user = User::query()->where('email', 'awa@example.com')->firstOrFail();
+        $path = "avatars/{$user->id}.png";
+
+        $response->assertOk()->assertJsonPath('data.avatar', $path);
+        $this->assertStringContainsString($path, $response->json('data.avatarUrl'));
+        $this->assertStringContainsString('expires=', $response->json('data.avatarUrl'));
+        Storage::disk('r2')->assertExists($path);
+    }
+
+    public function test_uploading_a_new_avatar_replaces_the_old_one(): void
+    {
+        $token = $this->postJson('/api/auth/register', [
+            'name' => 'Awa Ndiaye',
+            'email' => 'awa@example.com',
+            'password' => 'secret1234',
+        ])->json('data.token');
+
+        $this->withToken($token)->postJson('/api/auth/avatar', [
+            'file' => UploadedFile::fake()->create('photo.png', 10, 'image/png'),
+        ])->assertOk();
+        $this->withToken($token)->postJson('/api/auth/avatar', [
+            'file' => UploadedFile::fake()->create('photo.jpg', 10, 'image/jpeg'),
+        ])->assertOk();
+
+        /** @var User $user */
+        $user = User::query()->where('email', 'awa@example.com')->firstOrFail();
+        Storage::disk('r2')->assertMissing("avatars/{$user->id}.png");
+        Storage::disk('r2')->assertExists("avatars/{$user->id}.jpg");
+    }
+
+    public function test_avatar_rejects_non_image_files(): void
+    {
+        $token = $this->postJson('/api/auth/register', [
+            'name' => 'Awa Ndiaye',
+            'email' => 'awa@example.com',
+            'password' => 'secret1234',
+        ])->json('data.token');
+
+        $this->withToken($token)->postJson('/api/auth/avatar', [
+            'file' => UploadedFile::fake()->create('doc.pdf', 10, 'application/pdf'),
+        ])->assertStatus(422);
+    }
+
+    public function test_avatar_requires_authentication(): void
+    {
+        $this->postJson('/api/auth/avatar', [])->assertStatus(401);
+        $this->deleteJson('/api/auth/avatar')->assertStatus(401);
+    }
+
+    public function test_user_can_remove_their_avatar(): void
+    {
+        $token = $this->postJson('/api/auth/register', [
+            'name' => 'Awa Ndiaye',
+            'email' => 'awa@example.com',
+            'password' => 'secret1234',
+        ])->json('data.token');
+
+        $this->withToken($token)->postJson('/api/auth/avatar', [
+            'file' => UploadedFile::fake()->create('photo.png', 10, 'image/png'),
+        ])->assertOk();
+
+        $this->withToken($token)->deleteJson('/api/auth/avatar')
+            ->assertOk()
+            ->assertJsonPath('data.avatar', null)
+            ->assertJsonPath('data.avatarUrl', null);
+
+        /** @var User $user */
+        $user = User::query()->where('email', 'awa@example.com')->firstOrFail();
+        Storage::disk('r2')->assertMissing("avatars/{$user->id}.png");
     }
 }

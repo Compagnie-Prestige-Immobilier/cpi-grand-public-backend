@@ -3,6 +3,8 @@
 namespace App\Dto;
 
 use App\Models\User;
+use App\Services\StorageService;
+use Spatie\LaravelData\Attributes\Computed;
 use Spatie\LaravelData\Attributes\MapInputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -12,6 +14,14 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 #[MapInputName(SnakeCaseMapper::class)]
 class UserData extends Data
 {
+    /**
+     * URL affichable de la photo de profil. Deux origines possibles :
+     * une URL Google (stockée telle quelle, commence par http) servie
+     * directement, ou un chemin R2 privé servi via lien signé.
+     */
+    #[Computed]
+    public ?string $avatarUrl;
+
     /**
      * @param  string[]  $permissions
      */
@@ -28,7 +38,13 @@ class UserData extends Data
         public readonly ?string $role,          // nom du rôle Spatie : client / agent-cpi / super-admin
         public readonly array $permissions,   // permissions résolues côté serveur (getAllPermissions)
         public readonly ?string $clientId = null, // id de la fiche Client associée (utilisateurs clients)
-    ) {}
+    ) {
+        $this->avatarUrl = match (true) {
+            $avatar === null => null,
+            str_starts_with($avatar, 'http') => $avatar,
+            default => app(StorageService::class)->temporaryUrl($avatar, 60),
+        };
+    }
 
     public static function fromModel(User $user): self
     {

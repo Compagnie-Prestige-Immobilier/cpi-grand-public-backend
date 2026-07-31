@@ -6,6 +6,8 @@ use App\Models\Client;
 use App\Models\CpiDoc;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -248,5 +250,87 @@ class CpiDocTest extends TestCase
     {
         $this->getJson('/api/staff/cpi-docs')->assertStatus(401);
         $this->getJson('/api/client/mes-documents-cpi')->assertStatus(401);
+    }
+
+    // ─── Fichier réel (upload R2) ─────────────────────────────
+
+    public function test_staff_can_upload_a_real_file_to_a_cpi_doc(): void
+    {
+        $client = $this->makeClient();
+        $doc = $this->makeDoc($client);
+
+        $response = $this->withToken($this->agentToken())
+            ->postJson("/api/staff/cpi-docs/{$doc->id}/upload", [
+                'file' => UploadedFile::fake()->create('contrat-reservation.pdf', 240, 'application/pdf'),
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.fichier', 'contrat-reservation.pdf')
+            ->assertJsonPath('data.format', 'PDF');
+
+        $path = "cpi-docs/{$client->id}/{$doc->id}.pdf";
+        Storage::disk('r2')->assertExists($path);
+        $this->assertDatabaseHas('cpi_docs', ['id' => $doc->id, 'file_path' => $path]);
+
+        // Servi uniquement via lien signé, jamais un chemin brut.
+        $this->assertStringContainsString($path, $response->json('data.fileUrl'));
+        $this->assertStringContainsString('expires=', $response->json('data.fileUrl'));
+    }
+
+    public function test_uploading_a_new_file_replaces_the_old_one_on_r2(): void
+    {
+        $client = $this->makeClient();
+        $doc = $this->makeDoc($client);
+        $token = $this->agentToken();
+
+        $this->withToken($token)->postJson("/api/staff/cpi-docs/{$doc->id}/upload", [
+            'file' => UploadedFile::fake()->create('v1.pdf', 10, 'application/pdf'),
+        ])->assertOk();
+
+        $this->withToken($token)->postJson("/api/staff/cpi-docs/{$doc->id}/upload", [
+            'file' => UploadedFile::fake()->create('v2.png', 10, 'image/png'),
+        ])->assertOk();
+
+        Storage::disk('r2')->assertMissing("cpi-docs/{$client->id}/{$doc->id}.pdf");
+        Storage::disk('r2')->assertExists("cpi-docs/{$client->id}/{$doc->id}.png");
+    }
+
+    public function test_upload_rejects_disallowed_file_types(): void
+    {
+        $doc = $this->makeDoc($this->makeClient());
+
+        $this->withToken($this->agentToken())
+            ->postJson("/api/staff/cpi-docs/{$doc->id}/upload", [
+                'file' => UploadedFile::fake()->create('script.sh', 10, 'text/x-shellscript'),
+            ])->assertStatus(422);
+    }
+
+    public function test_client_cannot_upload_a_cpi_doc_file(): void
+    {
+        [, , $token] = $this->makeClientUser();
+        $doc = $this->makeDoc($this->makeClient());
+
+        $this->withToken($token)
+            ->postJson("/api/staff/cpi-docs/{$doc->id}/upload", [
+                'file' => UploadedFile::fake()->create('x.pdf', 10, 'application/pdf'),
+            ])->assertStatus(403);
+    }
+
+    public function test_deleting_a_doc_removes_its_file_from_r2(): void
+    {
+        $client = $this->makeClient();
+        $doc = $this->makeDoc($client);
+
+        $this->withToken($this->agentToken())->postJson("/api/staff/cpi-docs/{$doc->id}/upload", [
+            'file' => UploadedFile::fake()->create('contrat.pdf', 10, 'application/pdf'),
+        ])->assertOk();
+
+        auth()->forgetGuards();
+
+        $this->withToken($this->adminToken())
+            ->deleteJson("/api/staff/cpi-docs/{$doc->id}")
+            ->assertOk();
+
+        Storage::disk('r2')->assertMissing("cpi-docs/{$client->id}/{$doc->id}.pdf");
     }
 }
