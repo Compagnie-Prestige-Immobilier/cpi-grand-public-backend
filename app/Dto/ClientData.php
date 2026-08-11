@@ -18,6 +18,10 @@ class ClientData extends Data
     public function __construct(
         public readonly string $id,
         public readonly string $name,
+        // Compte de connexion associé. NULL pour un dossier créé par le
+        // personnel sans inscription : un tel client ne peut pas se connecter,
+        // donc pas non plus être consulté en prise en main.
+        public readonly ?string $userId,
         public readonly string $ref,
         public readonly string $statut,          // NOT NULL avec défaut en base → non nullable
         public readonly int $progression,     // NOT NULL avec défaut en base → non nullable

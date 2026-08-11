@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\DecaissementController;
 use App\Http\Controllers\Api\DemandeController;
 use App\Http\Controllers\Api\DocController;
 use App\Http\Controllers\Api\HistoriqueController;
+use App\Http\Controllers\Api\ImpersonationController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StatsController;
@@ -41,6 +42,11 @@ Route::post('/auth/onboarding', [AuthController::class, 'completeOnboarding'])->
 Route::post('/auth/avatar', [AuthController::class, 'updateAvatar'])->middleware('auth:sanctum');
 Route::delete('/auth/avatar', [AuthController::class, 'removeAvatar'])->middleware('auth:sanctum');
 Route::get('/auth/onboarding-status', [AuthController::class, 'onboardingStatus'])->middleware('auth:sanctum');
+
+// Fin de prise en main : appelée AVEC le jeton d'impersonation, donc par un
+// compte client — elle ne peut pas vivre derrière le middleware `staff`.
+// Le contrôleur vérifie que le jeton en est bien un d'impersonation.
+Route::post('/impersonate/leave', [ImpersonationController::class, 'leave'])->middleware('auth:sanctum');
 
 /*
 |--------------------------------------------------------------------------
@@ -99,6 +105,10 @@ Route::middleware(['auth:sanctum', 'staff'])->prefix('staff')->group(function ()
     Route::get('/staff/list', [StaffController::class, 'listStaff']);
     Route::post('/staff/create', [StaffController::class, 'createStaff']);
     Route::delete('/staff/{user}', [StaffController::class, 'deleteStaff']);
+
+    // Prise en main d'un compte client (agent + administrateur côté serveur ;
+    // l'interface ne propose le bouton qu'aux administrateurs pour l'instant).
+    Route::post('/impersonate/{user}', [ImpersonationController::class, 'start']);
 
     // Clients
     Route::get('/clients', [ClientController::class, 'index']);
