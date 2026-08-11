@@ -6,6 +6,7 @@ use App\Dto\DemandeData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Demande;
+use App\Models\Notification;
 use App\Models\RequisDoc;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonInterface;
@@ -33,6 +34,21 @@ class DemandeController extends Controller
     public function saveMine(Request $request): JsonResponse
     {
         $client = $this->currentClient($request);
+
+        // Le dossier se fige dès que CPI l'étudie.
+        //
+        // Auparavant la demande restait modifiable indéfiniment : un client
+        // pouvait porter son montant de 25 à 40 millions après l'analyse et
+        // l'envoi en banque, sans que personne n'en soit informé — l'agent
+        // continuait de travailler sur un chiffre que la fiche ne portait plus.
+        //
+        // Le verrou est ICI, côté serveur, et pas seulement dans l'interface :
+        // masquer le bouton laisserait l'API grande ouverte.
+        abort_if(
+            $client->dossier_etape >= self::ETAPE_VERROUILLAGE,
+            409,
+            "Votre dossier est en cours d'étude par CPI : les informations ne sont plus modifiables. Contactez votre conseiller pour toute correction.",
+        );
 
         $validated = $request->validate([
             'type_projet' => 'sometimes|string|max:100',
@@ -77,6 +93,68 @@ class DemandeController extends Controller
     }
 
     /**
+     * PUT /staff/clients/{client}/demande — correction par le personnel CPI.
+     *
+     * Contrepartie indispensable du verrou posé sur `saveMine` : à partir de
+     * l'étape « Analyse » le client ne peut plus toucher à sa demande, et une
+     * coquille repérée à ce moment-là ne pouvait plus être corrigée par
+     * PERSONNE. L'agent reprend donc la main, sans limite d'étape.
+     *
+     * La différence de fond avec l'ancienne situation n'est pas qui écrit, mais
+     * que l'écriture laisse une trace : l'ancien et le nouveau contenu partent
+     * au journal, et le client est prévenu.
+     */
+    public function updateForClient(Request $request, Client $client): JsonResponse
+    {
+        $validated = $request->validate([
+            'type_projet' => 'sometimes|string|max:100',
+            'nature_projet' => 'sometimes|string|max:100',
+            'montant' => 'sometimes|nullable|numeric|min:0',
+            'duree' => 'sometimes|string|max:10',
+            'apport' => 'sometimes|numeric|min:0',
+            'region' => 'sometimes|string|max:100',
+            'commune' => 'sometimes|nullable|string|max:150',
+            'adresse_projet' => 'sometimes|nullable|string|max:255',
+            'description' => 'sometimes|nullable|string|max:5000',
+        ]);
+
+        $demande = $client->demande;
+        abort_if($demande === null, 404, "Ce dossier n'a pas encore de demande à corriger.");
+
+        // Valeurs d'avant, limitées aux champs réellement touchés : le journal
+        // doit dire ce qui a changé, pas répéter toute la demande.
+        $avant = collect($validated)
+            ->map(fn ($_, string $champ) => $demande->getAttribute($champ))
+            ->all();
+
+        $demande->update($validated);
+
+        activity()
+            ->causedBy($request->user())
+            ->performedOn($client)
+            ->withProperties(['avant' => $avant, 'apres' => $validated])
+            ->event('demande-corrigee')
+            ->log("{$request->user()?->name} a corrigé la demande de {$client->name}");
+
+        // Le client doit savoir que son dossier a été modifié en son nom.
+        if ($client->user_id !== null) {
+            Notification::create([
+                'client_id' => $client->id,
+                'user_id' => $client->user_id,
+                'titre' => 'Demande corrigée',
+                'message' => 'Votre conseiller CPI a corrigé une information de votre demande. Consultez « Ma demande ».',
+                'type' => 'info',
+                'target_page' => 'ma-demande',
+                'date' => now(),
+                'heure' => now()->format('H:i'),
+                'lu' => false,
+            ]);
+        }
+
+        return response()->json(['data' => DemandeData::from($demande->refresh())]);
+    }
+
+    /**
      * GET /client/ma-demande/recapitulatif — récapitulatif PDF du dossier.
      *
      * Rend un PDF téléchargeable plutôt que du JSON : c'est le seul endpoint
@@ -116,6 +194,15 @@ class DemandeController extends Controller
         // « Téléchargements » du client.
         return $pdf->download("recapitulatif-{$client->ref}.pdf");
     }
+
+    /**
+     * Étape à partir de laquelle la demande n'est plus modifiable par le client.
+     *
+     * 3 = « Analyse » : le client garde la main tant que le dossier est
+     * seulement *reçu* (il peut corriger une faute de frappe lui-même), et le
+     * dossier se fige dès que CPI commence réellement à l'instruire.
+     */
+    public const ETAPE_VERROUILLAGE = 3;
 
     /** Libellés du parcours — miroir de TIMELINE_STEPS côté frontend. */
     private const ETAPES = [
