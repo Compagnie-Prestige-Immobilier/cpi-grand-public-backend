@@ -203,4 +203,65 @@ class DemandeTest extends TestCase
                 ->assertStatus(409);
         }
     }
+
+    public function test_staff_can_correct_a_locked_demande(): void
+    {
+        // Le cas qui motive cet endpoint : la coquille n'est repérée qu'une fois
+        // l'instruction commencée, quand le client n'a plus la main.
+        [, $client] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id, 'montant' => 25000000, 'commune' => 'Rufique']);
+        $client->update(['dossier_etape' => DemandeController::ETAPE_VERROUILLAGE]);
+
+        $agent = User::factory()->create();
+        $agent->assignRole('agent-cpi');
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->putJson("/api/staff/clients/{$client->id}/demande", ['commune' => 'Rufisque'])
+            ->assertOk()
+            ->assertJsonPath('data.commune', 'Rufisque');
+    }
+
+    public function test_the_correction_records_the_previous_value(): void
+    {
+        [, $client] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id, 'commune' => 'Rufique']);
+        $agent = User::factory()->create();
+        $agent->assignRole('agent-cpi');
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->putJson("/api/staff/clients/{$client->id}/demande", ['commune' => 'Rufisque']);
+
+        $entree = Activity::where('event', 'demande-corrigee')->latest('id')->first();
+        $this->assertNotNull($entree);
+        // Sans l'ancienne valeur, le journal dirait qu'il y a eu correction sans
+        // dire laquelle — inutilisable pour un litige.
+        $this->assertSame('Rufique', $entree->properties['avant']['commune']);
+        $this->assertSame('Rufisque', $entree->properties['apres']['commune']);
+    }
+
+    public function test_the_client_is_told_their_demande_was_corrected(): void
+    {
+        [$user, $client] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id, 'commune' => 'Rufique']);
+        $agent = User::factory()->create();
+        $agent->assignRole('agent-cpi');
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->putJson("/api/staff/clients/{$client->id}/demande", ['commune' => 'Rufisque']);
+
+        $this->assertDatabaseHas('app_notifications', [   // table renommée pour ne pas heurter celle de Laravel
+            'user_id' => $user->id,
+            'titre' => 'Demande corrigée',
+        ]);
+    }
+
+    public function test_a_client_cannot_correct_another_dossier(): void
+    {
+        [, $client, $token] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id]);
+
+        $this->withToken($token)
+            ->putJson("/api/staff/clients/{$client->id}/demande", ['commune' => 'Dakar'])
+            ->assertForbidden();
+    }
 }

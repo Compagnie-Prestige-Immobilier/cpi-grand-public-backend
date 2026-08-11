@@ -123,6 +123,9 @@ Route::middleware(['auth:sanctum', 'staff'])->prefix('staff')->group(function ()
     Route::get('/clients/{client}/summary', [ClientController::class, 'summary']);
     Route::post('/clients/{client}/dossier-etape', [ClientController::class, 'setDossierEtape']);
     Route::get('/clients/{client}/dossier-journey', [ClientController::class, 'dossierJourney']);
+    // Correction de la demande par le personnel : le client la perd à l'étape
+    // « Analyse » (DemandeController::ETAPE_VERROUILLAGE), l'agent la garde.
+    Route::put('/clients/{client}/demande', [DemandeController::class, 'updateForClient']);
 
     // Documents management
     Route::get('/clients/{client}/docs', [DocController::class, 'index']);

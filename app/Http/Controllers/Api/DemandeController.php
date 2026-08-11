@@ -6,6 +6,7 @@ use App\Dto\DemandeData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Demande;
+use App\Models\Notification;
 use App\Models\RequisDoc;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonInterface;
@@ -87,6 +88,68 @@ class DemandeController extends Controller
             ->performedOn($client)
             ->event('demande-soumise')
             ->log("{$client->name} a soumis sa demande de financement");
+
+        return response()->json(['data' => DemandeData::from($demande->refresh())]);
+    }
+
+    /**
+     * PUT /staff/clients/{client}/demande — correction par le personnel CPI.
+     *
+     * Contrepartie indispensable du verrou posé sur `saveMine` : à partir de
+     * l'étape « Analyse » le client ne peut plus toucher à sa demande, et une
+     * coquille repérée à ce moment-là ne pouvait plus être corrigée par
+     * PERSONNE. L'agent reprend donc la main, sans limite d'étape.
+     *
+     * La différence de fond avec l'ancienne situation n'est pas qui écrit, mais
+     * que l'écriture laisse une trace : l'ancien et le nouveau contenu partent
+     * au journal, et le client est prévenu.
+     */
+    public function updateForClient(Request $request, Client $client): JsonResponse
+    {
+        $validated = $request->validate([
+            'type_projet' => 'sometimes|string|max:100',
+            'nature_projet' => 'sometimes|string|max:100',
+            'montant' => 'sometimes|nullable|numeric|min:0',
+            'duree' => 'sometimes|string|max:10',
+            'apport' => 'sometimes|numeric|min:0',
+            'region' => 'sometimes|string|max:100',
+            'commune' => 'sometimes|nullable|string|max:150',
+            'adresse_projet' => 'sometimes|nullable|string|max:255',
+            'description' => 'sometimes|nullable|string|max:5000',
+        ]);
+
+        $demande = $client->demande;
+        abort_if($demande === null, 404, "Ce dossier n'a pas encore de demande à corriger.");
+
+        // Valeurs d'avant, limitées aux champs réellement touchés : le journal
+        // doit dire ce qui a changé, pas répéter toute la demande.
+        $avant = collect($validated)
+            ->map(fn ($_, string $champ) => $demande->getAttribute($champ))
+            ->all();
+
+        $demande->update($validated);
+
+        activity()
+            ->causedBy($request->user())
+            ->performedOn($client)
+            ->withProperties(['avant' => $avant, 'apres' => $validated])
+            ->event('demande-corrigee')
+            ->log("{$request->user()?->name} a corrigé la demande de {$client->name}");
+
+        // Le client doit savoir que son dossier a été modifié en son nom.
+        if ($client->user_id !== null) {
+            Notification::create([
+                'client_id' => $client->id,
+                'user_id' => $client->user_id,
+                'titre' => 'Demande corrigée',
+                'message' => 'Votre conseiller CPI a corrigé une information de votre demande. Consultez « Ma demande ».',
+                'type' => 'info',
+                'target_page' => 'ma-demande',
+                'date' => now(),
+                'heure' => now()->format('H:i'),
+                'lu' => false,
+            ]);
+        }
 
         return response()->json(['data' => DemandeData::from($demande->refresh())]);
     }
