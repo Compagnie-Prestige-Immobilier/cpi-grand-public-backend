@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\ImpersonationController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StatsController;
+use App\Http\Controllers\Api\SupportController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -85,6 +86,9 @@ Route::middleware(['auth:sanctum', 'client'])->prefix('client')->group(function 
 
     // Own bank assignments
     Route::get('/mes-banques', [BankController::class, 'myAssignments']);
+
+    // Support — le message part par courriel vers la boîte du support.
+    Route::post('/support', [SupportController::class, 'send']);
 
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'mine']);

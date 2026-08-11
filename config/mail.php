@@ -115,4 +115,17 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Boîte du support CPI
+    |--------------------------------------------------------------------------
+    |
+    | Destinataire des demandes envoyées depuis « Support » par les clients.
+    | Le formulaire n'écrit rien en base : le message part vers cette adresse,
+    | qui est déjà relevée par l'équipe — pas de file d'attente à surveiller.
+    |
+    */
+
+    'support_address' => env('SUPPORT_EMAIL', 'support@cpi.sn'),
+
 ];
