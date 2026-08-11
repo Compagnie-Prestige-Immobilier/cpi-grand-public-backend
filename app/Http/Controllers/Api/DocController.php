@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Dto\RequisDocData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Models\Notification;
 use App\Models\RequisDoc;
 use App\Services\StorageService;
 use Illuminate\Http\JsonResponse;
@@ -105,6 +106,13 @@ class DocController extends Controller
             ->event('validated')
             ->log("{$request->user()?->name} a validé le document {$docRow->label} pour {$client->name}");
 
+        $this->notifierClient(
+            $client,
+            'Pièce validée',
+            "Votre pièce « {$docRow->label} » a été validée par votre conseiller CPI.",
+            'validation',
+        );
+
         return response()->json(['data' => RequisDocData::from($docRow->refresh())]);
     }
 
@@ -132,6 +140,13 @@ class DocController extends Controller
             ->event('refused')
             ->log("{$request->user()?->name} a refusé le document {$docRow->label} pour {$client->name}");
 
+        $this->notifierClient(
+            $client,
+            'Pièce refusée',
+            "Votre pièce « {$docRow->label} » a été refusée : {$validated['comment']}. Merci de la renvoyer.",
+            'alerte',
+        );
+
         return response()->json(['data' => RequisDocData::from($docRow->refresh())]);
     }
 
@@ -158,6 +173,13 @@ class DocController extends Controller
             ->withProperties(['action' => 'doc_replace', 'doc_id' => $docRow->doc_id])
             ->event('replacement-requested')
             ->log("{$request->user()?->name} a demandé le remplacement du document {$docRow->label} pour {$client->name}");
+
+        $this->notifierClient(
+            $client,
+            'Pièce à remplacer',
+            "Votre conseiller CPI demande le remplacement de « {$docRow->label} » : {$validated['comment']}.",
+            'action',
+        );
 
         return response()->json(['data' => RequisDocData::from($docRow->refresh())]);
     }
@@ -205,6 +227,35 @@ class DocController extends Controller
     private function ensureRequiredDocs(Client $client)
     {
         return $client->ensureRequiredDocs();
+    }
+
+    /**
+     * Prévient le client d'une décision prise sur l'une de ses pièces.
+     *
+     * C'est aussi ce qui alimente son « Historique de traitement » : le client
+     * n'a pas accès à /staff/historique, sa vue d'activité est reconstruite à
+     * partir de ses notifications (cf. docStateContext). Sans cet appel, dépôts,
+     * validations et refus n'y laissaient AUCUNE trace — l'écran affichait
+     * « Aucune action pour le moment » même sur un dossier déjà traité.
+     */
+    private function notifierClient(Client $client, string $titre, string $message, string $type): void
+    {
+        // Un dossier créé par le personnel n'a pas de compte : rien à notifier.
+        if ($client->user_id === null) {
+            return;
+        }
+
+        Notification::create([
+            'client_id' => $client->id,
+            'user_id' => $client->user_id,
+            'titre' => $titre,
+            'message' => $message,
+            'type' => $type,
+            'target_page' => 'ma-demande',
+            'date' => now(),
+            'heure' => now()->format('H:i'),
+            'lu' => false,
+        ]);
     }
 
     private function findDoc(Client $client, string $docId): RequisDoc
