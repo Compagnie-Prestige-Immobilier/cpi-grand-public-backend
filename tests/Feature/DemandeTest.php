@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Api\DemandeController;
 use App\Models\Client;
 use App\Models\Demande;
 use App\Models\User;
@@ -162,5 +163,44 @@ class DemandeTest extends TestCase
         $this->withToken($agent->createToken('t')->plainTextToken)
             ->getJson('/api/client/ma-demande/recapitulatif')
             ->assertForbidden();
+    }
+
+    public function test_the_demande_can_still_be_edited_while_only_received(): void
+    {
+        [, $client, $token] = $this->makeClientUser();
+        // Étapes 0 à 2 : CPI n'a pas commencé l'instruction, le client corrige
+        // lui-même une faute de frappe sans passer par son conseiller.
+        $client->update(['dossier_etape' => 2]);
+
+        $this->withToken($token)
+            ->postJson('/api/client/ma-demande', ['montant' => 30000000])
+            ->assertOk();
+    }
+
+    public function test_the_demande_is_locked_once_cpi_starts_the_analysis(): void
+    {
+        [, $client, $token] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id, 'montant' => 25000000]);
+        $client->update(['dossier_etape' => DemandeController::ETAPE_VERROUILLAGE]);
+
+        $this->withToken($token)
+            ->postJson('/api/client/ma-demande', ['montant' => 40000000])
+            ->assertStatus(409);
+
+        // Le montant d'origine doit être intact : c'est celui sur lequel
+        // l'agent travaille.
+        $this->assertSame(25000000.0, (float) $client->demande->refresh()->montant);
+    }
+
+    public function test_the_lock_holds_at_every_later_stage(): void
+    {
+        [, $client, $token] = $this->makeClientUser();
+
+        foreach ([3, 4, 5] as $etape) {
+            $client->update(['dossier_etape' => $etape]);
+            $this->withToken($token)
+                ->postJson('/api/client/ma-demande', ['montant' => 40000000])
+                ->assertStatus(409);
+        }
     }
 }

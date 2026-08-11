@@ -34,6 +34,21 @@ class DemandeController extends Controller
     {
         $client = $this->currentClient($request);
 
+        // Le dossier se fige dès que CPI l'étudie.
+        //
+        // Auparavant la demande restait modifiable indéfiniment : un client
+        // pouvait porter son montant de 25 à 40 millions après l'analyse et
+        // l'envoi en banque, sans que personne n'en soit informé — l'agent
+        // continuait de travailler sur un chiffre que la fiche ne portait plus.
+        //
+        // Le verrou est ICI, côté serveur, et pas seulement dans l'interface :
+        // masquer le bouton laisserait l'API grande ouverte.
+        abort_if(
+            $client->dossier_etape >= self::ETAPE_VERROUILLAGE,
+            409,
+            "Votre dossier est en cours d'étude par CPI : les informations ne sont plus modifiables. Contactez votre conseiller pour toute correction.",
+        );
+
         $validated = $request->validate([
             'type_projet' => 'sometimes|string|max:100',
             'nature_projet' => 'sometimes|string|max:100',
@@ -116,6 +131,15 @@ class DemandeController extends Controller
         // « Téléchargements » du client.
         return $pdf->download("recapitulatif-{$client->ref}.pdf");
     }
+
+    /**
+     * Étape à partir de laquelle la demande n'est plus modifiable par le client.
+     *
+     * 3 = « Analyse » : le client garde la main tant que le dossier est
+     * seulement *reçu* (il peut corriger une faute de frappe lui-même), et le
+     * dossier se fige dès que CPI commence réellement à l'instruire.
+     */
+    public const ETAPE_VERROUILLAGE = 3;
 
     /** Libellés du parcours — miroir de TIMELINE_STEPS côté frontend. */
     private const ETAPES = [
