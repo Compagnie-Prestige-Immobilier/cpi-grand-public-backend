@@ -6,8 +6,13 @@ use App\Dto\DemandeData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Demande;
+use App\Models\RequisDoc;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 
 class DemandeController extends Controller
 {
@@ -69,6 +74,107 @@ class DemandeController extends Controller
             ->log("{$client->name} a soumis sa demande de financement");
 
         return response()->json(['data' => DemandeData::from($demande->refresh())]);
+    }
+
+    /**
+     * GET /client/ma-demande/recapitulatif — récapitulatif PDF du dossier.
+     *
+     * Rend un PDF téléchargeable plutôt que du JSON : c'est le seul endpoint
+     * client qui ne renvoie pas de données structurées, d'où l'absence de
+     * `['data' => …]`.
+     */
+    public function recapitulatifMine(Request $request): Response
+    {
+        $client = $this->currentClient($request);
+        $client->loadMissing('demande', 'requisDocs');
+        $demande = $client->demande;
+        $pieces = $client->requisDocs;
+
+        $nbValidees = $pieces->where('status', 'accepte')->count();
+        $etape = $this->etapeParcours((bool) $demande?->submitted, $pieces, $client->dossier_etape);
+
+        $pdf = Pdf::loadView('pdf.recapitulatif', [
+            'client' => $client,
+            'demande' => $demande,
+            'pieces' => $pieces,
+            'nbValidees' => $nbValidees,
+            'genereLe' => $this->dateFr(now()),
+            'montant' => $demande?->montant !== null ? $this->fcfa((float) $demande->montant) : '—',
+            'apport' => $demande?->apport !== null ? $this->fcfa((float) $demande->apport) : '—',
+            'localisation' => collect([$demande?->adresse_projet, $demande?->commune, $demande?->region])
+                ->filter()->implode(', ') ?: '—',
+            'envoyeeLe' => $demande?->submitted_at ? $this->dateFr($demande->submitted_at) : 'Non envoyée',
+            'statutDemande' => $demande?->submitted ? 'Envoyée à CPI' : 'Brouillon — pas encore envoyée',
+            'etape' => $etape,
+            'etapeLibelle' => self::ETAPES[$etape] ?? '—',
+            'etatLibelles' => self::ETATS_PIECE,
+            'etatClasses' => self::CLASSES_PIECE,
+        ]);
+
+        // Nom de fichier bâti sur la référence du dossier : deux
+        // téléchargements successifs ne s'écrasent pas dans le dossier
+        // « Téléchargements » du client.
+        return $pdf->download("recapitulatif-{$client->ref}.pdf");
+    }
+
+    /** Libellés du parcours — miroir de TIMELINE_STEPS côté frontend. */
+    private const ETAPES = [
+        'Inscription', 'Dossier reçu', 'Documents valides',
+        'Analyse', 'Validation banque', 'Signature',
+    ];
+
+    /** Libellés affichés pour les statuts serveur (les clés ne changent pas). */
+    private const ETATS_PIECE = [
+        'en-attente' => 'À envoyer',
+        'depose' => 'En attente de validation',
+        'verification' => 'En vérification',
+        'accepte' => 'Validé',
+        'refuse' => 'Refusé',
+        'a-remplacer' => 'À remplacer',
+    ];
+
+    private const CLASSES_PIECE = [
+        'en-attente' => 'etat-neutre',
+        'depose' => 'etat-attente',
+        'verification' => 'etat-attente',
+        'accepte' => 'etat-ok',
+        'refuse' => 'etat-ko',
+        'a-remplacer' => 'etat-ko',
+    ];
+
+    /**
+     * Portage de ClientController::computeJourneyStep — même règle, pour que le
+     * PDF affiche exactement l'étape que le client voit à l'écran.
+     *
+     * @param  Collection<int, RequisDoc>  $pieces
+     */
+    private function etapeParcours(bool $submitted, Collection $pieces, int $etapeCpi): int
+    {
+        if (! $submitted) {
+            return 0;
+        }
+        $toutesValides = $pieces->isNotEmpty() && $pieces->every(fn ($p) => $p->status === 'accepte');
+
+        return $toutesValides ? min(5, max(2, $etapeCpi)) : 1;
+    }
+
+    /** 25000000 → « 25 000 000 FCFA » (espace insécable fine, comme à l'écran). */
+    private function fcfa(float $montant): string
+    {
+        return number_format($montant, 0, ',', ' ').' FCFA';
+    }
+
+    /**
+     * « 11 août 2026 » — locale forcée sur l'instance.
+     *
+     * APP_LOCALE vaut « en » : sans ce `locale('fr')`, translatedFormat sortait
+     * « 11 August 2026 » dans un document par ailleurs entièrement français.
+     * On le fixe ici plutôt que globalement pour ne rien changer au reste de
+     * l'application (messages de validation, etc.).
+     */
+    private function dateFr(CarbonInterface $date): string
+    {
+        return $date->locale('fr')->translatedFormat('j F Y');
     }
 
     private function currentClient(Request $request): Client

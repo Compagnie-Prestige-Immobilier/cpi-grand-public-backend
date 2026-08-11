@@ -115,4 +115,52 @@ class DemandeTest extends TestCase
         $this->postJson('/api/client/ma-demande', [])->assertStatus(401);
         $this->postJson('/api/client/ma-demande/submit')->assertStatus(401);
     }
+
+    public function test_recapitulatif_returns_a_pdf(): void
+    {
+        [, $client, $token] = $this->makeClientUser();
+        Demande::create([
+            'client_id' => $client->id,
+            'type_projet' => 'financement',
+            'montant' => 25000000,
+            'commune' => 'Rufisque',
+            'submitted' => true,
+            'submitted_at' => now(),
+        ]);
+
+        $response = $this->withToken($token)->get('/api/client/ma-demande/recapitulatif');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringContainsString(
+            "recapitulatif-{$client->ref}.pdf",
+            $response->headers->get('content-disposition') ?? ''
+        );
+        // %PDF- : le corps est un PDF réel, pas une page d'erreur rendue en 200.
+        $this->assertStringStartsWith('%PDF-', $response->getContent());
+    }
+
+    public function test_recapitulatif_works_without_a_demande(): void
+    {
+        // Un client fraîchement inscrit n'a pas encore de demande : le PDF doit
+        // sortir malgré tout plutôt que de tomber sur un accès à null.
+        [, , $token] = $this->makeClientUser();
+
+        $this->withToken($token)->get('/api/client/ma-demande/recapitulatif')->assertOk();
+    }
+
+    public function test_recapitulatif_requires_authentication(): void
+    {
+        $this->getJson('/api/client/ma-demande/recapitulatif')->assertUnauthorized();
+    }
+
+    public function test_recapitulatif_is_refused_to_staff(): void
+    {
+        $agent = User::factory()->create();
+        $agent->assignRole('agent-cpi');
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->getJson('/api/client/ma-demande/recapitulatif')
+            ->assertForbidden();
+    }
 }

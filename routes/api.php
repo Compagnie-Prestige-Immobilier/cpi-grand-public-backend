@@ -60,6 +60,8 @@ Route::middleware(['auth:sanctum', 'client'])->prefix('client')->group(function 
     Route::get('/ma-demande', [DemandeController::class, 'mine']);
     Route::post('/ma-demande', [DemandeController::class, 'saveMine']);
     Route::post('/ma-demande/submit', [DemandeController::class, 'submitMine']);
+    // Seule route client qui renvoie un fichier (PDF) et non du JSON.
+    Route::get('/ma-demande/recapitulatif', [DemandeController::class, 'recapitulatifMine']);
 
     // Own documents
     Route::get('/mes-documents', [DocController::class, 'mine']);
