@@ -91,7 +91,9 @@ class DecaissementTest extends TestCase
     public function test_show_creates_the_row_on_demand_for_a_legacy_client(): void
     {
         $client = $this->makeClient();
-        Decaissement::query()->where('client_id', $client->id)->delete();
+        // `forceDelete` : voir ChantierTest — on simule un dossier antérieur au
+        // module, pas un décaissement mis à la corbeille.
+        Decaissement::query()->where('client_id', $client->id)->forceDelete();
         $this->assertDatabaseMissing('decaissements', ['client_id' => $client->id]);
 
         $this->withToken($this->agentToken())->getJson('/api/staff/decaissements/'.$client->id)

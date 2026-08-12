@@ -85,7 +85,10 @@ class ChantierTest extends TestCase
     public function test_show_creates_the_row_on_demand_for_a_legacy_client(): void
     {
         $client = $this->makeClient();
-        Chantier::query()->where('client_id', $client->id)->delete();
+        // `forceDelete` : depuis l'introduction des suppressions douces, un
+        // `delete()` laisserait la ligne en base avec un `deleted_at` — ce que
+        // ce test veut simuler, c'est un dossier qui n'a JAMAIS eu de chantier.
+        Chantier::query()->where('client_id', $client->id)->forceDelete();
         $this->assertDatabaseMissing('chantiers', ['client_id' => $client->id]);
 
         $this->withToken($this->agentToken())->getJson('/api/staff/chantiers/'.$client->id)

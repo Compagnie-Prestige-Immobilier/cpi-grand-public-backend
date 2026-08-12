@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class RequisDoc extends Model
 {
-    use HasUuids;
+    use HasUuids, SoftDeletes;
 
     /**
      * Les trois pièces exigées de tout dossier, dans l'ordre d'affichage.

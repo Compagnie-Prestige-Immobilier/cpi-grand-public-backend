@@ -8,13 +8,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class Client extends Model
 {
-    use HasUuids, LogsActivity;
+    use HasUuids, LogsActivity, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -68,6 +69,32 @@ class Client extends Model
             $client->ensureDecaissement();
             $client->ensureChantier();
         });
+
+        // Une suppression douce est un simple UPDATE : les contraintes SQL
+        // `ON DELETE CASCADE` ne se déclenchent pas. Sans cette propagation, un
+        // dossier « supprimé » laisserait derrière lui une demande, des pièces
+        // et un décaissement toujours actifs, visibles des écrans du personnel.
+        static::deleting(function (Client $client): void {
+            if ($client->isForceDeleting()) {
+                return;   // la cascade SQL fait le travail
+            }
+
+            $client->demande?->delete();
+            $client->decaissement?->delete();
+            $client->chantier?->delete();
+            $client->requisDocs()->get()->each->delete();
+            $client->cpiDocs()->get()->each->delete();
+        });
+
+        // Restaurer un dossier doit rendre son contenu, sinon la restauration
+        // ne rend qu'une coquille.
+        static::restoring(function (Client $client): void {
+            $client->demande()->withTrashed()->restore();
+            $client->decaissement()->withTrashed()->restore();
+            $client->chantier()->withTrashed()->restore();
+            $client->requisDocs()->withTrashed()->restore();
+            $client->cpiDocs()->withTrashed()->restore();
+        });
     }
 
     /**
@@ -79,10 +106,17 @@ class Client extends Model
     public function ensureRequiredDocs(): Collection
     {
         foreach (RequisDoc::REQUIRED as $docId => $label) {
-            RequisDoc::firstOrCreate(
+            // `unique(client_id, doc_id)` compte les lignes en corbeille :
+            // sans `withTrashed()`, une pièce supprimée en douceur ferait
+            // échouer la recréation au lieu d'être restaurée.
+            $piece = RequisDoc::withTrashed()->firstOrCreate(
                 ['client_id' => $this->id, 'doc_id' => $docId],
                 ['label' => $label, 'status' => 'en-attente', 'version' => 0],
             );
+
+            if ($piece->trashed()) {
+                $piece->restore();
+            }
         }
 
         return $this->requisDocs()->get();
@@ -94,15 +128,25 @@ class Client extends Model
      */
     public function ensureDecaissement(): Decaissement
     {
-        // `first()` puis `create()` laissait passer deux insertions concurrentes
-        // sur un dossier fraîchement créé : le dossier se retrouvait avec deux
-        // lignes de décaissement, et `first()` en renvoyait une au hasard.
-        // `firstOrCreate` rattrape la violation d'unicité et relit la ligne
-        // gagnante au lieu de remonter une 500.
+        // `withTrashed()` est indispensable : la contrainte d'unicité sur
+        // `client_id` compte aussi les lignes en corbeille. Sans lui, un
+        // décaissement supprimé en douceur ferait échouer l'insertion suivante
+        // sur une violation d'unicité, au lieu d'être simplement restauré.
+        //
+        // `firstOrCreate` couvre par ailleurs la course : deux requêtes
+        // concurrentes sur un dossier fraîchement créé inséraient deux lignes,
+        // après quoi `first()` — sans `orderBy` — en renvoyait une au hasard.
+        //
         // create() ne remonte pas les défauts SQL (foncier) : refresh() obligatoire.
-        return $this->decaissement()->firstOrCreate([], [
+        $decaissement = $this->decaissement()->withTrashed()->firstOrCreate([], [
             'tranches' => Decaissement::defaultTranches(),
-        ])->refresh();
+        ]);
+
+        if ($decaissement->trashed()) {
+            $decaissement->restore();
+        }
+
+        return $decaissement->refresh();
     }
 
     /**
@@ -115,10 +159,17 @@ class Client extends Model
      */
     public function ensureChantier(): Chantier
     {
-        // Même course que pour le décaissement (voir ensureDecaissement).
+        // Mêmes raisons que pour le décaissement : corbeille comptée par la
+        // contrainte d'unicité, et course sur un dossier fraîchement créé.
         // create() ne remonte pas les défauts SQL (progression, statut,
         // etape_actuelle) : refresh() obligatoire.
-        $chantier = $this->chantier()->firstOrCreate([])->refresh();
+        $chantier = $this->chantier()->withTrashed()->firstOrCreate([]);
+
+        if ($chantier->trashed()) {
+            $chantier->restore();
+        }
+
+        $chantier->refresh();
 
         foreach (Chantier::defaultTranches() as $tranche) {
             ChantierTranche::firstOrCreate(

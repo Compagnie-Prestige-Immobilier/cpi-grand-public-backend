@@ -199,7 +199,7 @@ class CpiDocTest extends TestCase
         $this->withToken($this->adminToken())->deleteJson('/api/staff/cpi-docs/'.$doc->id)
             ->assertOk();
 
-        $this->assertDatabaseMissing('cpi_docs', ['id' => $doc->id]);
+        $this->assertSoftDeleted('cpi_docs', ['id' => $doc->id]);
     }
 
     // ─── Client ───────────────────────────────────────────────

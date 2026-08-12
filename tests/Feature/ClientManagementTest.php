@@ -146,7 +146,10 @@ class ClientManagementTest extends TestCase
         $this->withToken($this->adminToken())->deleteJson('/api/staff/clients/'.$client->id)
             ->assertOk();
 
-        $this->assertDatabaseMissing('clients', ['id' => $client->id]);
+        // Suppression douce : le dossier de financement d'un particulier
+        // (pièces d'identité, montants, historique) ne doit plus pouvoir
+        // disparaître définitivement sur un clic.
+        $this->assertSoftDeleted('clients', ['id' => $client->id]);
     }
 
     public function test_summary_returns_lightweight_shape(): void

@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Chantier extends Model
 {
-    use HasUuids;
+    use HasUuids, SoftDeletes;
 
     /** États possibles du chantier — le défaut en base est « non-demarre ». */
     public const STATUTS = ['non-demarre', 'en-cours', 'suspendu', 'en-retard', 'termine', 'livre'];

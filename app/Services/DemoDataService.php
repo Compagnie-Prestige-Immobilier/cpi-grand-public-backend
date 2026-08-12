@@ -197,10 +197,16 @@ class DemoDataService
                 ->delete();
         }
 
-        // Cascade : demande, pièces requises, documents CPI, orientations
+        // `forceDelete` et non `delete` : depuis l'introduction des suppressions
+        // douces, un `delete()` laisserait les dossiers de démonstration en base
+        // avec un simple `deleted_at`. La purge doit vraiment purger — c'est sa
+        // seule raison d'être — et le rechargement du jeu de démonstration
+        // buterait sinon sur la contrainte d'unicité de `clients.ref`.
+        //
+        // Cascade SQL : demande, pièces requises, documents CPI, orientations
         // bancaires, décaissement, chantier (+ tranches, publications, médias,
         // événements) et notifications partent avec le dossier.
-        $clients = $clientIds === [] ? 0 : Client::query()->whereIn('id', $clientIds)->delete();
+        $clients = $clientIds === [] ? 0 : Client::query()->whereIn('id', $clientIds)->forceDelete();
 
         $users = 0;
         if ($userIds !== []) {
