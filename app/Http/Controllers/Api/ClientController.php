@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Services\DemoDataService;
+use App\Services\NotifieLeClient;
 use App\Support\ParcoursDossier;
 use App\Support\PortefeuilleConseiller;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,8 @@ use Spatie\LaravelData\PaginatedDataCollection;
 class ClientController extends Controller
 {
     use ResoudLeDossierDuClient;
+
+    public function __construct(private readonly NotifieLeClient $notifie) {}
 
     // ─── Espace client (self-service) ─────────────────────────
 
@@ -212,6 +215,8 @@ class ClientController extends Controller
             ->withProperties(['etape' => $validated['etape']])
             ->event('dossier-etape')
             ->log("{$request->user()?->name} a défini l'étape du dossier de {$client->name} à {$validated['etape']}");
+
+        $this->notifie->etapeDossier($client, (int) $validated['etape']);
 
         return response()->json(['data' => ClientData::from($client->refresh())]);
     }

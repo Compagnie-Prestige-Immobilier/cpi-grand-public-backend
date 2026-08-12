@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Bank;
 use App\Models\BankAssignment;
 use App\Models\Client;
+use App\Services\NotifieLeClient;
 use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,8 @@ use Illuminate\Validation\Rule;
 class BankController extends Controller
 {
     use ResoudLeDossierDuClient;
+
+    public function __construct(private readonly NotifieLeClient $notifie) {}
 
     /** Réponse d'une banque à une orientation de dossier. */
     /** @var list<string> Valeurs acceptées — l'enum en est la source. */
@@ -207,6 +210,14 @@ class BankController extends Controller
             ])
             ->event('banque-statut')
             ->log("{$request->user()?->name} a enregistré la réponse « {$validated['status']} » de {$bank->name} pour {$client->name}");
+
+        if ($nouveau !== BankAssignmentStatut::EnAttente) {
+            $this->notifie->reponseBancaire(
+                $client,
+                $bank->name,
+                $nouveau === BankAssignmentStatut::Accord,
+            );
+        }
 
         return response()->json(['data' => BankAssignmentData::from($assignment->refresh()->load('bank'))]);
     }

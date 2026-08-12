@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\CpiDoc;
+use App\Services\NotifieLeClient;
 use App\Services\StorageService;
 use App\Support\BorneListe;
 use App\Support\TransitionStatut;
@@ -22,7 +23,10 @@ class CpiDocController extends Controller
 {
     use ResoudLeDossierDuClient;
 
-    public function __construct(private readonly StorageService $storage) {}
+    public function __construct(
+        private readonly StorageService $storage,
+        private readonly NotifieLeClient $notifie,
+    ) {}
 
     // ─── Espace client ────────────────────────────────────────
 
@@ -240,6 +244,14 @@ class CpiDocController extends Controller
             ->withProperties(['cpi_doc_id' => $cpiDoc->id])
             ->event('cpi-doc-publie')
             ->log("{$request->user()?->name} a publié le document {$cpiDoc->nom}");
+
+        // Un contrat mis à disposition — a fortiori à signer — sans que le
+        // client en soit averti reste invisible jusqu'à sa prochaine visite.
+        if ($cpiDoc->client !== null) {
+            $cpiDoc->signature_requise
+                ? $this->notifie->documentASigner($cpiDoc->client, $cpiDoc->nom)
+                : $this->notifie->documentDisponible($cpiDoc->client, $cpiDoc->nom);
+        }
 
         return response()->json(['data' => CpiDocData::from($cpiDoc->refresh())]);
     }

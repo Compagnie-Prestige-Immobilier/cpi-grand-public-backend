@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Decaissement;
 use App\Services\DecaissementGuardService;
+use App\Services\NotifieLeClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,7 +24,10 @@ use Illuminate\Http\Request;
  */
 class DecaissementController extends Controller
 {
-    public function __construct(private readonly DecaissementGuardService $gardes) {}
+    public function __construct(
+        private readonly DecaissementGuardService $gardes,
+        private readonly NotifieLeClient $notifie,
+    ) {}
 
     /**
      * GET /staff/decaissements/{client} — état de décaissement du dossier.
@@ -134,6 +138,8 @@ class DecaissementController extends Controller
             ->event('terrain-decaisse')
             ->log("{$request->user()?->name} a décaissé le prix du terrain pour {$client->name}");
 
+        $this->notifie->versement($client, 'Acquisition du terrain');
+
         return response()->json(['data' => DecaissementData::from($decaissement->refresh())]);
     }
 
@@ -191,6 +197,8 @@ class DecaissementController extends Controller
             ->withProperties(['tranche' => $index])
             ->event('tranche-decaissee')
             ->log("{$request->user()?->name} a décaissé la tranche ".($index + 1)." pour {$client->name}");
+
+        $this->notifie->versement($client, 'Tranche de construction '.($index + 1));
 
         return response()->json(['data' => DecaissementData::from($decaissement->refresh())]);
     }
