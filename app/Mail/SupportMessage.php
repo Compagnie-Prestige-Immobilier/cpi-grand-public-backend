@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Models\Client;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
@@ -17,7 +18,14 @@ use Illuminate\Queue\SerializesModels;
  * (`Mail::assertSent`), et l'objet comme l'adresse de réponse se déclarent au
  * même endroit que le corps du message.
  */
-class SupportMessage extends Mailable
+/**
+ * `ShouldQueue` : l'envoi partait dans la requête HTTP du client. Une lenteur
+ * ou une panne du serveur SMTP se traduisait par une requête qui traîne puis
+ * échoue, alors que le message était bien recevable. Avec `QUEUE_CONNECTION=sync`
+ * le comportement reste identique ; le jour où une file est activée, l'envoi
+ * sort du chemin critique sans autre changement.
+ */
+class SupportMessage extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 

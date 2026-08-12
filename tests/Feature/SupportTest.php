@@ -45,7 +45,12 @@ class SupportTest extends TestCase
 
         // Le cœur du correctif : un message part réellement. L'ancien formulaire
         // affichait « Ticket envoyé ! » sans rien émettre.
-        Mail::assertSent(SupportMessage::class, function (SupportMessage $mail) use ($client, $user) {
+        //
+        // `assertQueued` et non `assertSent` : le Mailable implémente désormais
+        // ShouldQueue, pour que la lenteur ou la panne du serveur SMTP ne fasse
+        // plus traîner puis échouer la requête HTTP du client. Avec
+        // QUEUE_CONNECTION=sync le message part quand même immédiatement.
+        Mail::assertQueued(SupportMessage::class, function (SupportMessage $mail) use ($client, $user) {
             // Sujet et adresse de réponse sont portés par l'enveloppe, pas par
             // des propriétés du Mailable : les lire ailleurs donne null.
             $enveloppe = $mail->envelope();

@@ -19,7 +19,9 @@ class StaffController extends Controller
     {
         $this->authorize('manage-staff');
 
-        $staff = User::role(['agent-cpi', 'super-admin'])->get();
+        // `UserData::fromModel` lit `$user->client` : sans eager-load, une
+        // requête supplémentaire par membre du personnel.
+        $staff = User::role(['agent-cpi', 'super-admin'])->with('client')->get();
 
         return response()->json([
             'data' => UserData::collect($staff),

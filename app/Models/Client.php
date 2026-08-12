@@ -186,11 +186,24 @@ class Client extends Model
      */
     public static function generateRef(): string
     {
-        do {
+        // `exists()` puis insertion laisse une fenêtre entre les deux : deux
+        // inscriptions simultanées peuvent tirer la même référence, et c'est la
+        // contrainte unique en base qui tranche — par une 500. Le tirage est
+        // large (36^5 ≈ 60 millions par an), la collision est rare, mais elle
+        // tombe précisément au pire moment : l'inscription d'un client.
+        // La contrainte unique reste le juge ; on lui laisse simplement
+        // plusieurs chances avant d'abandonner.
+        foreach (range(1, 5) as $essai) {
             $ref = 'CPI-'.now()->year.'-'.strtoupper(Str::random(5));
-        } while (static::query()->where('ref', $ref)->exists());
 
-        return $ref;
+            if (! static::withTrashed()->where('ref', $ref)->exists()) {
+                return $ref;
+            }
+        }
+
+        // Cinq collisions d'affilée : suffixe plus long plutôt qu'une boucle
+        // infinie sur une table saturée.
+        return 'CPI-'.now()->year.'-'.strtoupper(Str::random(8));
     }
 
     public function getActivitylogOptions(): LogOptions
