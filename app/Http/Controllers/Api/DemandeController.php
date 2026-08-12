@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\DemandeData;
-use App\Enums\RequisDocStatut;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Demande;
 use App\Models\Notification;
 use App\Models\RequisDoc;
+use App\Support\ParcoursDossier;
 use App\Support\VerrouDossier;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonInterface;
@@ -180,7 +180,7 @@ class DemandeController extends Controller
         $pieces = $client->requisDocs;
 
         $nbValidees = $pieces->where('status', 'accepte')->count();
-        $etape = $this->etapeParcours((bool) $demande?->submitted, $pieces, $client->dossier_etape);
+        $etape = ParcoursDossier::etape((bool) $demande?->submitted, $pieces, $client->dossier_etape);
 
         $pdf = Pdf::loadView('pdf.recapitulatif', [
             'client' => $client,
@@ -247,15 +247,6 @@ class DemandeController extends Controller
      *
      * @param  Collection<int, RequisDoc>  $pieces
      */
-    private function etapeParcours(bool $submitted, Collection $pieces, int $etapeCpi): int
-    {
-        if (! $submitted) {
-            return 0;
-        }
-        $toutesValides = $pieces->isNotEmpty() && $pieces->every(fn ($p) => $p->status === RequisDocStatut::Accepte);
-
-        return $toutesValides ? min(5, max(2, $etapeCpi)) : 1;
-    }
 
     /** 25000000 → « 25 000 000 FCFA » (espace insécable fine, comme à l'écran). */
     private function fcfa(float $montant): string

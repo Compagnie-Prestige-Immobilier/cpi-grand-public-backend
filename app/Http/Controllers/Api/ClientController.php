@@ -3,13 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\ClientData;
-use App\Enums\RequisDocStatut;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
-use App\Models\RequisDoc;
 use App\Services\DemoDataService;
+use App\Support\ParcoursDossier;
 use App\Support\PortefeuilleConseiller;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -314,30 +312,12 @@ class ClientController extends Controller
         $client->loadMissing('demande', 'requisDocs');
 
         $submitted = (bool) $client->demande?->submitted;
-        $step = $this->computeJourneyStep($submitted, $client->requisDocs, $client->dossier_etape);
+        $step = ParcoursDossier::etape($submitted, $client->requisDocs, $client->dossier_etape);
 
         return response()->json(['data' => [
             'step' => $step,
             'submitted' => $submitted,
             'dossierEtape' => $client->dossier_etape,
         ]]);
-    }
-
-    /**
-     * Porté de dossierJourney.ts — le backend est la source de vérité.
-     *
-     * @param  Collection<int, RequisDoc>  $docs
-     */
-    private function computeJourneyStep(bool $submitted, Collection $docs, int $etapeCpi = 2): int
-    {
-        if (! $submitted) {
-            return 0;
-        }
-        $allValid = $docs->isNotEmpty() && $docs->every(fn (RequisDoc $d) => $d->status === RequisDocStatut::Accepte);
-        if (! $allValid) {
-            return 1;
-        }
-
-        return min(5, max(2, $etapeCpi));
     }
 }

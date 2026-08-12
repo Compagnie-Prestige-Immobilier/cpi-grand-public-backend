@@ -10,6 +10,7 @@ use App\Services\StorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -40,22 +41,32 @@ class AuthController extends Controller
             'phone' => 'nullable|string|max:50',
         ]);
 
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'phone' => $validated['phone'] ?? null,
-        ]);
-        $user->assignRole('client');
+        // Une inscription écrit dans users, model_has_roles, clients, puis —
+        // par `Client::booted()` — requis_docs, decaissements, chantiers et
+        // chantier_tranches. Sans transaction, un échec à mi-parcours laissait
+        // un compte sans dossier, ou un dossier sans pièces : l'utilisateur
+        // pouvait se connecter dans une application qui ne savait plus quoi lui
+        // montrer, et rien ne permettait de rejouer la création.
+        $user = DB::transaction(function () use ($validated): User {
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'phone' => $validated['phone'] ?? null,
+            ]);
+            $user->assignRole('client');
 
-        Client::create([
-            'user_id' => $user->id,
-            'name' => $user->name,
-            'ref' => Client::generateRef(),
-            'email' => $user->email,
-            'phone' => $user->phone,
-            'date_inscription' => now(),
-        ]);
+            Client::create([
+                'user_id' => $user->id,
+                'name' => $user->name,
+                'ref' => Client::generateRef(),
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'date_inscription' => now(),
+            ]);
+
+            return $user;
+        });
 
         $token = $user->createToken('api-token')->plainTextToken;
 
