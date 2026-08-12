@@ -107,7 +107,7 @@ class CpiDocController extends Controller
         ]);
 
         $doc = CpiDoc::create([
-            ...collect($validated)->filter(fn ($v) => $v !== null)->all(),
+            ...array_filter($validated, fn ($v) => $v !== null),
             'auteur' => $request->user()->name,
             'date_creation' => now(),
         ])->refresh();

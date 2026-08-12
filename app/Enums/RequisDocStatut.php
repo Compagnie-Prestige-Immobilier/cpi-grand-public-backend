@@ -70,7 +70,12 @@ enum RequisDocStatut: string implements Statut
         return in_array($cible, $this->suivants(), true);
     }
 
-    /** Valeurs acceptées par les règles de validation. */
+    /**
+     * Valeurs acceptées par les règles de validation.
+     *
+     * @return list<string>
+     */
+    /** @return list<string> */
     public static function valeurs(): array
     {
         return array_column(self::cases(), 'value');

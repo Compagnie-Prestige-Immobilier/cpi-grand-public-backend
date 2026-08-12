@@ -17,7 +17,7 @@ class RoleAccessTest extends TestCase
     /**
      * Run the DatabaseSeeder before each test.
      */
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function clientToken(): string
     {

@@ -114,7 +114,7 @@ class ClientController extends Controller
         ]);
 
         $client = Client::create([
-            ...collect($validated)->filter(fn ($v) => $v !== null)->all(),
+            ...array_filter($validated, fn ($v) => $v !== null),
             'ref' => Client::generateRef(),
             'date_inscription' => $validated['date_inscription'] ?? now(),
         ])->refresh();

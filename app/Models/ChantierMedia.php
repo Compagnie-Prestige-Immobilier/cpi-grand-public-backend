@@ -49,6 +49,7 @@ class ChantierMedia extends Model
         ];
     }
 
+    /** @return BelongsTo<Chantier, $this> */
     public function chantier(): BelongsTo
     {
         return $this->belongsTo(Chantier::class);

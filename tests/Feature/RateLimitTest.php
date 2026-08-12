@@ -19,7 +19,7 @@ class RateLimitTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     public function test_login_is_throttled_after_the_configured_number_of_attempts(): void
     {

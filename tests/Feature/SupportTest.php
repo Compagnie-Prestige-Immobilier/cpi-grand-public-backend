@@ -14,7 +14,7 @@ class SupportTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     /** @return array{0: User, 1: Client, 2: string} */
     private function clientConnecte(): array

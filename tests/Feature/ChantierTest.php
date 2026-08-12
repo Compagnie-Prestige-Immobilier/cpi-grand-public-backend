@@ -18,7 +18,7 @@ class ChantierTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function agentToken(): string
     {

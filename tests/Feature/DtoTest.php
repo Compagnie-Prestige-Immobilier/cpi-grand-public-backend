@@ -21,7 +21,7 @@ class DtoTest extends TestCase
     /**
      * Run the DatabaseSeeder before each test.
      */
-    protected $seed = true;
+    protected bool $seed = true;
 
     public function test_user_data_output_keys_are_camel_case(): void
     {

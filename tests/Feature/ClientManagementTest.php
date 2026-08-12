@@ -16,7 +16,7 @@ class ClientManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function agentToken(): string
     {
@@ -34,6 +34,7 @@ class ClientManagementTest extends TestCase
         return $admin->createToken('t')->plainTextToken;
     }
 
+    /** @param  array<string, mixed>  $overrides */
     private function makeClient(array $overrides = []): Client
     {
         return Client::create([
@@ -300,10 +301,10 @@ class ClientManagementTest extends TestCase
 
         $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
 
-        $noms = collect($this->withToken($agent->createToken('t')->plainTextToken)
-            ->getJson('/api/staff/clients')->json('data'))->pluck('name');
+        $noms = array_column((array) $this->withToken($agent->createToken('t')->plainTextToken)
+            ->getJson('/api/staff/clients')->json('data'), 'name');
 
-        $this->assertTrue($noms->contains('Le mien'));
-        $this->assertFalse($noms->contains('Celui du collègue'));
+        $this->assertContains('Le mien', $noms);
+        $this->assertNotContains('Celui du collègue', $noms);
     }
 }

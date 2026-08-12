@@ -216,6 +216,8 @@ class Client extends Model
 
     /**
      * L'utilisateur (compte de connexion) associé à ce client.
+     *
+     * @return BelongsTo<User, $this>
      */
     public function user(): BelongsTo
     {
@@ -224,6 +226,8 @@ class Client extends Model
 
     /**
      * Le conseiller CPI assigné à ce client.
+     *
+     * @return BelongsTo<User, $this>
      */
     public function conseillerUser(): BelongsTo
     {
@@ -299,6 +303,8 @@ class Client extends Model
 
     /**
      * Les notifications adressées à ce client.
+     *
+     * @return HasMany<Notification, $this>
      */
     public function notifications(): HasMany
     {

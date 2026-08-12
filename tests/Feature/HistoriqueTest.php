@@ -19,7 +19,7 @@ class HistoriqueTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function agent(): User
     {

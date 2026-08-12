@@ -20,7 +20,7 @@ class ParcoursDossierTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function dossier(bool $soumise, int $etapeCpi, bool $piecesValidees): Client
     {

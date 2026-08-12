@@ -8,4 +8,16 @@ parameters:
         - routes
         - tests
 
-    level: 5
+    level: 6
+
+    # Niveau 6 atteint en supprimant les annotations manquantes, pas en les
+    # contournant. Le niveau 7 remonte 20 erreurs, dont 16 viennent des stubs
+    # de Laravel, Mockery et PHPUnit dans les tests (`PendingCommand|int`,
+    # `ExpectationInterface|HigherOrderMessage`) : les « corriger » reviendrait
+    # à écrire du code moins clair pour satisfaire l'outil. Les 4 restantes
+    # sont réelles et valent d'être traitées avant de monter :
+    #   - DemandeController::139  clé de getAttribute() typée int|string
+    #   - HistoriqueController::43  type du paramètre $activities
+    #   - StatsController::238,240  selectRaw()/groupByRaw() attendent une
+    #     literal-string, or ParcoursDossier::sql() construit la sienne
+

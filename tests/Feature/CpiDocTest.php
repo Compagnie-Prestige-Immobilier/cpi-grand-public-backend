@@ -17,7 +17,7 @@ class CpiDocTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function agentToken(): string
     {
@@ -63,6 +63,7 @@ class CpiDocTest extends TestCase
         return [$user, $client, $user->createToken('t')->plainTextToken];
     }
 
+    /** @param  array<string, mixed>  $overrides */
     private function makeDoc(Client $client, array $overrides = []): CpiDoc
     {
         return CpiDoc::create([

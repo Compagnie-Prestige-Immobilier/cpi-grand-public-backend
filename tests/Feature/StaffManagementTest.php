@@ -13,7 +13,7 @@ class StaffManagementTest extends TestCase
     /**
      * Run the DatabaseSeeder before each test.
      */
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function adminToken(): string
     {
@@ -94,7 +94,7 @@ class StaffManagementTest extends TestCase
         $response = $this->withToken($this->adminToken())->getJson('/api/staff/staff/list');
 
         $response->assertOk();
-        $emails = collect($response->json('data'))->pluck('email');
+        $emails = array_column((array) $response->json('data'), 'email');
         $this->assertContains('agent@cpi.sn', $emails);
         $this->assertContains('admin@cpi.sn', $emails);
     }

@@ -134,9 +134,10 @@ class DemandeController extends Controller
 
         // Valeurs d'avant, limitées aux champs réellement touchés : le journal
         // doit dire ce qui a changé, pas répéter toute la demande.
-        $avant = collect($validated)
-            ->map(fn ($_, string $champ) => $demande->getAttribute($champ))
-            ->all();
+        $avant = [];
+        foreach (array_keys($validated) as $champ) {
+            $avant[$champ] = $demande->getAttribute($champ);
+        }
 
         $demande->update($validated);
 

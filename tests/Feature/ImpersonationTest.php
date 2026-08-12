@@ -12,7 +12,7 @@ class ImpersonationTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     /** @return array{0: User, 1: string} */
     private function utilisateur(string $role): array

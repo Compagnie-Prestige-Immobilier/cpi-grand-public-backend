@@ -18,7 +18,7 @@ class DocTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     /**
      * @return array{0: User, 1: Client, 2: string}
@@ -108,12 +108,13 @@ class DocTest extends TestCase
 
         $docs = $this->withToken($token)->getJson('/api/client/mes-documents')->assertOk()->json('data');
 
-        $identite = collect($docs)->firstWhere('docId', 'identite');
+        $parDocId = array_column((array) $docs, null, 'docId');
+        $identite = $parDocId['identite'];
         $this->assertStringContainsString("docs/{$client->id}/identite_v1.pdf", $identite['fileUrl']);
         $this->assertStringContainsString('expires=', $identite['fileUrl']);
 
         // Les pièces non déposées n'ont aucun lien.
-        $this->assertNull(collect($docs)->firstWhere('docId', 'revenus')['fileUrl']);
+        $this->assertNull($parDocId['revenus']['fileUrl']);
     }
 
     public function test_second_deposit_increments_version(): void

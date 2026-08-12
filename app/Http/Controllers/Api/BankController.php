@@ -79,7 +79,7 @@ class BankController extends Controller
         ]);
 
         // create() ne remonte pas les défauts SQL (color) : refresh() obligatoire.
-        $bank = Bank::create(collect($validated)->filter(fn ($v) => $v !== null)->all())->refresh();
+        $bank = Bank::create(array_filter($validated, fn ($v) => $v !== null))->refresh();
 
         activity()
             ->causedBy($request->user())
