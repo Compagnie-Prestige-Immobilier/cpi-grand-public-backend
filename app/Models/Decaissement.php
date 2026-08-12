@@ -50,6 +50,7 @@ class Decaissement extends Model
      */
     protected $fillable = [
         'client_id',
+        'prepared_by',
         'terrain_montant',
         'terrain_decaisse',
         'terrain_date',

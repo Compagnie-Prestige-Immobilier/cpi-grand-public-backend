@@ -57,7 +57,9 @@ class DecaissementController extends Controller
             'tranches.*.comment' => 'sometimes|nullable|string|max:2000',
         ]);
 
-        $decaissement->update($validated);
+        // Qui a préparé le dossier : moitié du contrôle à quatre yeux, la
+        // personne qui valide le versement ne pourra pas être celle-ci.
+        $decaissement->update($validated + ['prepared_by' => $request->user()?->getKey()]);
 
         activity()
             ->causedBy($request->user())
@@ -67,6 +69,25 @@ class DecaissementController extends Controller
             ->log("{$request->user()?->name} a mis à jour le décaissement de {$client->name}");
 
         return response()->json(['data' => DecaissementData::from($decaissement->refresh())]);
+    }
+
+    /**
+     * Contrôle à quatre yeux : celui qui a préparé le décaissement ne peut pas
+     * le valider lui-même.
+     *
+     * Un versement d'argent réel ne doit jamais dépendre d'une seule personne.
+     * Les décaissements antérieurs à cette règle n'ont pas de préparateur connu
+     * (`prepared_by` nul) et restent validables : rien ne permet de
+     * reconstituer qui les a saisis.
+     */
+    private function refuserAutoValidation(Request $request, Decaissement $decaissement): void
+    {
+        abort_if(
+            $decaissement->prepared_by !== null
+                && $decaissement->prepared_by === $request->user()?->getKey(),
+            409,
+            'Vous avez préparé ce décaissement : sa validation revient à une autre personne habilitée.',
+        );
     }
 
     /**
@@ -80,7 +101,8 @@ class DecaissementController extends Controller
     public function validateTerrain(Request $request, Client $client): JsonResponse
     {
         $decaissement = $client->ensureDecaissement();
-        $this->authorize('validate', $decaissement);
+        $this->authorize('declencherVersement', $decaissement);
+        $this->refuserAutoValidation($request, $decaissement);
 
         $foncier = $this->foncierOf($decaissement);
         $foncier[0] = true;
@@ -111,7 +133,8 @@ class DecaissementController extends Controller
     public function validateFoncierStep(Request $request, Client $client, string $step): JsonResponse
     {
         $decaissement = $client->ensureDecaissement();
-        $this->authorize('validate', $decaissement);
+        $this->authorize('declencherVersement', $decaissement);
+        $this->refuserAutoValidation($request, $decaissement);
 
         $foncier = $this->foncierOf($decaissement);
         $index = $this->indexParam($step, count($foncier), 'Étape foncière inconnue.');
@@ -136,7 +159,8 @@ class DecaissementController extends Controller
     public function validateTranche(Request $request, Client $client, string $num): JsonResponse
     {
         $decaissement = $client->ensureDecaissement();
-        $this->authorize('validate', $decaissement);
+        $this->authorize('declencherVersement', $decaissement);
+        $this->refuserAutoValidation($request, $decaissement);
 
         $tranches = $this->tranchesOf($decaissement);
         $index = $this->indexParam($num, count($tranches), 'Tranche de construction inconnue.');

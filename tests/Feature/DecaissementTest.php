@@ -150,13 +150,18 @@ class DecaissementTest extends TestCase
     }
 
     // ─── Validations ──────────────────────────────────────────
+    //
+    // Le déclenchement d'un versement d'argent réel exige désormais la
+    // permission `validate-decaissements`, que le rôle `agent-cpi` n'a PAS :
+    // l'agent prépare le dossier, un administrateur valide. Ces tests utilisent
+    // donc un jeton admin là où ils utilisaient un jeton agent.
 
     public function test_validate_terrain_marks_the_disbursement_and_the_first_foncier_steps(): void
     {
         $client = $this->makeClient();
         $client->decaissement()->update(['terrain_montant' => 12000000]);
 
-        $response = $this->withToken($this->agentToken())
+        $response = $this->withToken($this->adminToken())
             ->postJson('/api/staff/decaissements/'.$client->id.'/validate-terrain');
 
         $response->assertOk()
@@ -173,7 +178,7 @@ class DecaissementTest extends TestCase
     {
         $client = $this->makeClient();
 
-        $this->withToken($this->agentToken())
+        $this->withToken($this->adminToken())
             ->postJson('/api/staff/decaissements/'.$client->id.'/validate-foncier/3')
             ->assertOk()
             ->assertJsonPath('data.foncier', [true, false, false, true, false]);
@@ -186,7 +191,7 @@ class DecaissementTest extends TestCase
     public function test_validate_foncier_step_out_of_range_returns_404(): void
     {
         $client = $this->makeClient();
-        $token = $this->agentToken();
+        $token = $this->adminToken();
 
         $this->withToken($token)->postJson('/api/staff/decaissements/'.$client->id.'/validate-foncier/9')
             ->assertStatus(404);
@@ -198,7 +203,7 @@ class DecaissementTest extends TestCase
     {
         $client = $this->makeClient();
 
-        $response = $this->withToken($this->agentToken())
+        $response = $this->withToken($this->adminToken())
             ->postJson('/api/staff/decaissements/'.$client->id.'/validate-tranche/1');
 
         $response->assertOk()
@@ -214,9 +219,11 @@ class DecaissementTest extends TestCase
     public function test_validate_tranche_keeps_the_existing_comment(): void
     {
         $client = $this->makeClient();
-        $token = $this->agentToken();
 
-        $this->withToken($token)->putJson('/api/staff/decaissements/'.$client->id, [
+        // Parcours nominal du contrôle à quatre yeux : l'agent prépare,
+        // l'administrateur valide. Préparer et valider avec le même compte
+        // renvoie désormais 409 (voir le test dédié plus bas).
+        $this->withToken($this->agentToken())->putJson('/api/staff/decaissements/'.$client->id, [
             'tranches' => [
                 ['validated' => false, 'comment' => 'Mobilisation des équipes.'],
                 ['validated' => false],
@@ -225,7 +232,7 @@ class DecaissementTest extends TestCase
             ],
         ])->assertOk();
 
-        $this->withToken($token)->postJson('/api/staff/decaissements/'.$client->id.'/validate-tranche/0')
+        $this->withToken($this->adminToken())->postJson('/api/staff/decaissements/'.$client->id.'/validate-tranche/0')
             ->assertOk()
             ->assertJsonPath('data.tranches.0.validated', true)
             ->assertJsonPath('data.tranches.0.comment', 'Mobilisation des équipes.');
@@ -235,7 +242,7 @@ class DecaissementTest extends TestCase
     {
         $client = $this->makeClient();
 
-        $this->withToken($this->agentToken())
+        $this->withToken($this->adminToken())
             ->postJson('/api/staff/decaissements/'.$client->id.'/validate-tranche/7')
             ->assertStatus(404);
     }
@@ -289,5 +296,65 @@ class DecaissementTest extends TestCase
         $this->postJson('/api/staff/decaissements/'.$client->id.'/validate-terrain')->assertStatus(401);
         $this->postJson('/api/staff/decaissements/'.$client->id.'/validate-foncier/1')->assertStatus(401);
         $this->postJson('/api/staff/decaissements/'.$client->id.'/validate-tranche/0')->assertStatus(401);
+    }
+
+    // ─── Contrôle à quatre yeux ───────────────────────────────
+
+    public function test_an_agent_cannot_trigger_a_disbursement(): void
+    {
+        // Un seul compte agent compromis suffisait à préparer ET déclencher un
+        // versement d'argent réel : la validation partageait la permission
+        // `manage-decaissements` avec une modification de routine.
+        $client = $this->makeClient();
+
+        $this->withToken($this->agentToken())
+            ->postJson('/api/staff/decaissements/'.$client->id.'/validate-terrain')
+            ->assertForbidden();
+
+        $this->assertFalse($client->decaissement->refresh()->terrain_decaisse);
+    }
+
+    public function test_whoever_prepared_the_disbursement_cannot_validate_it(): void
+    {
+        $client = $this->makeClient();
+        $token = $this->adminToken();
+
+        $this->withToken($token)->putJson('/api/staff/decaissements/'.$client->id, [
+            'terrain_montant' => 12000000,
+        ])->assertOk();
+
+        $this->withToken($token)
+            ->postJson('/api/staff/decaissements/'.$client->id.'/validate-terrain')
+            ->assertStatus(409);
+
+        $this->assertFalse($client->decaissement->refresh()->terrain_decaisse);
+    }
+
+    public function test_a_second_authorised_person_can_validate_what_someone_else_prepared(): void
+    {
+        $client = $this->makeClient();
+
+        $this->withToken($this->agentToken())->putJson('/api/staff/decaissements/'.$client->id, [
+            'terrain_montant' => 12000000,
+        ])->assertOk();
+
+        $this->withToken($this->adminToken())
+            ->postJson('/api/staff/decaissements/'.$client->id.'/validate-terrain')
+            ->assertOk();
+
+        $this->assertTrue($client->decaissement->refresh()->terrain_decaisse);
+    }
+
+    public function test_a_legacy_disbursement_without_a_known_preparer_stays_validatable(): void
+    {
+        // Les décaissements antérieurs à la règle n'ont pas de préparateur
+        // connu : rien ne permet de le reconstituer, et les bloquer figerait
+        // les dossiers en cours.
+        $client = $this->makeClient();
+        $client->decaissement->update(['prepared_by' => null]);
+
+        $this->withToken($this->adminToken())
+            ->postJson('/api/staff/decaissements/'.$client->id.'/validate-terrain')
+            ->assertOk();
     }
 }

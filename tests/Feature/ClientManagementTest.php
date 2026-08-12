@@ -222,4 +222,84 @@ class ClientManagementTest extends TestCase
         $this->getJson('/api/staff/clients/'.$client->id)->assertStatus(401);
         $this->postJson('/api/staff/clients', [])->assertStatus(401);
     }
+
+    // ─── Cloisonnement par conseiller ─────────────────────────
+
+    public function test_an_agent_cannot_open_a_dossier_assigned_to_another_adviser(): void
+    {
+        // `clients.conseiller_id` existait depuis l'origine sans qu'aucune
+        // policy ne le lise : tout agent voyait et modifiait TOUS les dossiers
+        // — pièces d'identité, revenus, montants, documents contractuels.
+        $autreConseiller = User::factory()->create();
+        $autreConseiller->assignRole('agent-cpi');
+
+        $client = Client::create([
+            'name' => 'Dossier d\'un collègue',
+            'ref' => Client::generateRef(),
+            'conseiller_id' => $autreConseiller->id,
+        ]);
+
+        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->getJson("/api/staff/clients/{$client->id}")
+            ->assertForbidden();
+
+        $this->withToken($agent->createToken('t2')->plainTextToken)
+            ->putJson("/api/staff/clients/{$client->id}", ['name' => 'Renommé'])
+            ->assertForbidden();
+    }
+
+    public function test_an_unassigned_dossier_stays_open_to_any_agent(): void
+    {
+        // Sinon les nouvelles demandes tomberaient dans un angle mort le temps
+        // qu'un administrateur les attribue.
+        $client = Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
+        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->getJson("/api/staff/clients/{$client->id}")
+            ->assertOk();
+    }
+
+    public function test_a_super_admin_sees_every_dossier(): void
+    {
+        $autreConseiller = User::factory()->create();
+        $autreConseiller->assignRole('agent-cpi');
+        $client = Client::create([
+            'name' => 'Dossier attribué',
+            'ref' => Client::generateRef(),
+            'conseiller_id' => $autreConseiller->id,
+        ]);
+
+        $admin = User::query()->where('email', 'admin@cpi.sn')->firstOrFail();
+
+        $this->withToken($admin->createToken('t')->plainTextToken)
+            ->getJson("/api/staff/clients/{$client->id}")
+            ->assertOk();
+    }
+
+    public function test_the_staff_listing_is_filtered_to_the_advisers_portfolio(): void
+    {
+        // La policy cloisonne dossier par dossier ; la liste doit l'être à la
+        // source, sinon un agent lirait les noms, références et montants de
+        // tout le portefeuille CPI avant même de cliquer.
+        $autreConseiller = User::factory()->create();
+        $autreConseiller->assignRole('agent-cpi');
+
+        Client::create(['name' => 'Le mien', 'ref' => Client::generateRef()]);
+        Client::create([
+            'name' => 'Celui du collègue',
+            'ref' => Client::generateRef(),
+            'conseiller_id' => $autreConseiller->id,
+        ]);
+
+        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
+
+        $noms = collect($this->withToken($agent->createToken('t')->plainTextToken)
+            ->getJson('/api/staff/clients')->json('data'))->pluck('name');
+
+        $this->assertTrue($noms->contains('Le mien'));
+        $this->assertFalse($noms->contains('Celui du collègue'));
+    }
 }

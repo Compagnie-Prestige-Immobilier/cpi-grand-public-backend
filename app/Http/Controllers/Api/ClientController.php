@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\RequisDoc;
 use App\Services\DemoDataService;
+use App\Support\PortefeuilleConseiller;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -66,15 +67,18 @@ class ClientController extends Controller
      * GET /staff/clients — liste paginée (relations chargées pour que les
      * tableaux de bord staff s'alimentent en un seul appel).
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Client::class);
 
+        // La policy `view` cloisonne dossier par dossier ; la liste doit être
+        // filtrée à la source, sinon un agent verrait les noms, références et
+        // montants de tout le portefeuille CPI avant même de cliquer.
+        $query = Client::query()->with('demande', 'requisDocs');
+        PortefeuilleConseiller::filtrer($query, $request->user());
+
         return response()->json(ClientData::collect(
-            Client::query()
-                ->with('demande', 'requisDocs')
-                ->orderByDesc('created_at')
-                ->paginate(50),
+            $query->orderByDesc('created_at')->paginate(50),
             PaginatedDataCollection::class,
         ));
     }

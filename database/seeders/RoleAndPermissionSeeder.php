@@ -28,7 +28,7 @@ class RoleAndPermissionSeeder extends Seeder
             'view-banks', 'create-bank', 'edit-bank', 'delete-bank',
             'assign-bank',
             // Disbursements
-            'view-decaissements', 'manage-decaissements',
+            'view-decaissements', 'manage-decaissements', 'validate-decaissements',
             // Chantier
             'view-chantier', 'manage-chantier',
             // Notifications
@@ -74,5 +74,12 @@ class RoleAndPermissionSeeder extends Seeder
         // /auth/me returns getRoleNames()->first() + getAllPermissions()->pluck('name')
         // — the frontend's single source of truth for RBAC.
         // Ownership rules ("a client only sees THEIR dossier") remain Policy checks, not permissions.
+
+        // Vider le cache APRÈS écriture, et pas seulement avant : une
+        // permission ajoutée à ce seeder resterait sinon invisible de tout
+        // `hasPermissionTo` servi par un cache constitué plus tôt dans le même
+        // processus — le symptôme est un 403 inexplicable sur un compte qui
+        // détient pourtant la permission en base.
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
     }
 }
