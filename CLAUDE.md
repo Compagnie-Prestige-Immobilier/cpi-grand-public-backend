@@ -51,11 +51,37 @@ détecte une erreur dans `bootstrap/app.php` qu'aucun test ne cible.
 
 ## Ce qui n'est pas encore fait
 
-- `Demande` n'a aucune colonne de statut ; le moteur d'état réel est
-  `Client.dossier_etape`, un entier piloté à la main.
-- `Client.statut` est un texte libre décoratif, lu par aucune logique métier.
-  Ne rien y accrocher.
-- `Decaissement.tranches` (JSON, sans montant par tranche) et `chantier_tranches`
-  (table relationnelle) décrivent le même découpage sans être reliés.
-- Aucune colonne de devise : XOF est une hypothèse implicite partout.
-- Aucun dossier `lang/` malgré une application entièrement française.
+Par ordre de valeur décroissante — c'est la suite du chantier, pas une liste de
+souhaits.
+
+1. **`Decaissement.tranches` (JSON, sans montant par tranche) et
+   `chantier_tranches` (table relationnelle) décrivent le même découpage sans
+   être reliés.** Les deux dérivent de `App\Support\ConstructionTranches`
+   depuis la remédiation, mais la réconciliation — montant par tranche, table
+   relationnelle, lien avec l'avancement des travaux — reste à faire. Tant
+   qu'elle n'est pas faite, le contrôle d'enveloppe ne peut vérifier que le
+   total, pas la ventilation.
+2. **Aucune colonne de devise** : XOF est une hypothèse implicite partout.
+   `App\Casts\MoneyCast` et `brick/money` sont en place et testés, mais aucune
+   colonne ne les utilise encore. La migration est additive (paires
+   `<champ>_amount` / `<champ>_currency`) et doit auditer les montants à
+   décimale non nulle AVANT d'arrondir quoi que ce soit.
+3. **`Demande` n'a aucune colonne de statut** ; le moteur d'état réel est
+   `Client.dossier_etape`, un entier piloté à la main. Les quatre autres modèles
+   ont leur machine à états ; celui-là non.
+4. **`Client.statut`** est un texte libre décoratif, lu par aucune logique
+   métier. Ne rien y accrocher — le supprimer ou le rendre calculé.
+5. **Aucune classe `FormRequest`** : la validation reste en ligne dans les
+   contrôleurs, une trentaine de fois.
+6. **Le système de notifications est maison** (`App\Models\Notification` +
+   `NotificationController`) et duplique `illuminate/notifications`. Le trait
+   `Notifiable` est déjà sur `User`, inutilisé.
+7. **66 `response()->json(['data' => X::from(...)])`** alors que
+   `config/data.php` déclare déjà `'wrap' => 'data'`. `StaffController::createStaff`
+   montre la forme correcte : retourner le `Data` directement.
+8. **Aucune factory** sauf `UserFactory` ; `DemoDataService` (635 lignes)
+   réimplémente ce que feraient des factories et Faker.
+9. **Larastan niveau 7** : 4 erreurs réelles nommées dans `phpstan.neon`.
+10. **Actions GitHub référencées par tag mutable** plutôt que par SHA épinglé,
+    et le Dockerfile n'a pas de directive `USER` (supervisord a besoin de root
+    au PID 1 ; les workers, eux, tournent déjà en `www-data`).
