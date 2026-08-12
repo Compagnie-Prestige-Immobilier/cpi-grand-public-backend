@@ -20,6 +20,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'staff' => StaffAuth::class,
         ]);
 
+        // Applique `throttle:api` à tout le groupe api. Sans cet appel, le
+        // squelette Laravel 11+ ne pose AUCUNE limite de débit : bourrage
+        // d'identifiants illimité sur /auth/login, création de comptes en masse
+        // sur /auth/register, et inondation de la boîte support (qui envoie de
+        // vrais courriels). Le limiteur `api` est défini dans AppServiceProvider.
+        $middleware->throttleApi();
+
         // Backend purement API : aucune route `login` nommée. Sans ceci le
         // squelette Laravel évalue `route('login')` dès qu'un invité arrive sans
         // en-tête Accept: application/json — 500 au lieu de 401.

@@ -8,6 +8,8 @@ use App\Models\Demande;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class DemandeTest extends TestCase
@@ -253,6 +255,29 @@ class DemandeTest extends TestCase
             'user_id' => $user->id,
             'titre' => 'Demande corrigée',
         ]);
+    }
+
+    public function test_a_staff_member_without_edit_client_cannot_correct_a_demande(): void
+    {
+        // Le middleware `staff` garantit le rôle, pas la permission. Cet
+        // endpoint était le seul de l'API à écrire sans passer par une policy :
+        // un agent privé de `edit-client` modifiait quand même la demande d'un
+        // dossier verrouillé.
+        [, $client] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id, 'commune' => 'Rufique']);
+
+        $agent = User::factory()->create();
+        $agent->assignRole('agent-cpi');
+        // La permission vient du rôle : la retirer du seul utilisateur ne
+        // changerait rien, `hasPermissionTo` la retrouverait via `agent-cpi`.
+        Role::findByName('agent-cpi')->revokePermissionTo('edit-client');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->putJson("/api/staff/clients/{$client->id}/demande", ['commune' => 'Rufisque'])
+            ->assertForbidden();
+
+        $this->assertSame('Rufique', $client->demande->refresh()->commune);
     }
 
     public function test_a_client_cannot_correct_another_dossier(): void

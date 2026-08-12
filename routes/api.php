@@ -28,8 +28,8 @@ use Illuminate\Support\Facades\Route;
 
 // Unified login — email/password for all users.
 // The app reads the user's role from the response and redirects accordingly.
-Route::post('/auth/register', [AuthController::class, 'register']);
-Route::post('/auth/login', [AuthController::class, 'login']);
+Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:register');
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 Route::get('/auth/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
 
@@ -88,7 +88,7 @@ Route::middleware(['auth:sanctum', 'client'])->prefix('client')->group(function 
     Route::get('/mes-banques', [BankController::class, 'myAssignments']);
 
     // Support — le message part par courriel vers la boîte du support.
-    Route::post('/support', [SupportController::class, 'send']);
+    Route::post('/support', [SupportController::class, 'send'])->middleware('throttle:support');
 
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'mine']);

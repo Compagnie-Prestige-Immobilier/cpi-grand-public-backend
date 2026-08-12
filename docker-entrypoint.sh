@@ -5,7 +5,8 @@
 # Runs for every container built from this image, so the boot work is guarded
 # by environment switches:
 #
-#   RUN_MIGRATIONS=true|false   migrate + seed roles/accounts (web only)
+#   RUN_MIGRATIONS=true|false   migrate + seed roles/permissions (web only)
+#   RUN_SEEDERS=true|false      additionally seed the DEMO accounts (never prod)
 #
 # Anything passed as arguments is exec'd instead of the default command, which is
 # how `command: [...]` in docker-compose works (queue:work, schedule:work, ...).
@@ -39,10 +40,19 @@ if [ "${RUN_MIGRATIONS}" = "true" ]; then
 
     php artisan migrate --force --no-interaction
 
-    # Roles, permissions and the built-in staff accounts. The seeders are
-    # idempotent (firstOrCreate/syncPermissions), so this is safe on every boot
-    # and REQUIRED on the first one — without roles nobody can log in.
-    php artisan db:seed --force --no-interaction
+    # Roles and permissions only. Idempotent (syncPermissions), safe on every
+    # boot and REQUIRED on the first one — without roles nobody can log in.
+    # This seeder creates no user account.
+    php artisan db:seed --force --no-interaction --class="Database\\Seeders\\RoleAndPermissionSeeder"
+
+    # The full seeder additionally creates the demo accounts. It refuses to do
+    # so when APP_ENV=production, but we also gate it here so a misconfigured
+    # APP_ENV can't silently reintroduce well-known credentials. Bootstrap the
+    # first production account out-of-band instead:
+    #   docker compose exec app php artisan cpi:create-admin admin@cpi.sn
+    if [ "${RUN_SEEDERS}" = "true" ]; then
+        php artisan db:seed --force --no-interaction
+    fi
 fi
 
 # --- Caches ------------------------------------------------------------------

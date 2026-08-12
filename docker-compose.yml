@@ -33,6 +33,9 @@ services:
     environment:
       # This is the container that owns the schema (migrate + seed at boot).
       RUN_MIGRATIONS: "true"
+      # Comptes de démonstration : jamais en production. Le premier compte
+      # se crée avec `php artisan cpi:create-admin <email>`.
+      RUN_SEEDERS: "false"
       # No queued jobs or scheduled tasks yet — see docker/supervisord.conf.
       RUN_QUEUE_WORKER: "false"
       RUN_SCHEDULER: "false"

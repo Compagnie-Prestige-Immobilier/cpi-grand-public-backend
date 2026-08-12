@@ -27,8 +27,12 @@ use App\Policies\DecaissementPolicy;
 use App\Policies\DemandePolicy;
 use App\Policies\NotificationPolicy;
 use App\Policies\RequisDocPolicy;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 
 class AppServiceProvider extends ServiceProvider
@@ -46,6 +50,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->registerRateLimiters();
+
         Gate::policy(Client::class, ClientPolicy::class);
         Gate::policy(Demande::class, DemandePolicy::class);
         Gate::policy(RequisDoc::class, RequisDocPolicy::class);
@@ -59,5 +65,31 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(ChantierEvent::class, ChantierEventPolicy::class);
         Gate::policy(Notification::class, NotificationPolicy::class);
         Gate::policy(Activity::class, ActivityPolicy::class);
+    }
+
+    /**
+     * Limiteurs de débit de l'API.
+     *
+     * `api` est consommé par `throttleApi()` (bootstrap/app.php) et couvre tout
+     * le groupe api. Les trois autres se posent en plus sur les routes qu'un
+     * attaquant a intérêt à marteler : authentification, création de compte et
+     * envoi de courriel.
+     */
+    private function registerRateLimiters(): void
+    {
+        RateLimiter::for('api', fn (Request $request) => Limit::perMinute(config('rate_limits.api'))
+            ->by($request->user()?->id ?: $request->ip()));
+
+        // Par couple IP + email : un attaquant ne peut pas balayer les comptes
+        // depuis une seule adresse, et un client derrière une IP partagée n'est
+        // pas bloqué par les erreurs de son voisin.
+        RateLimiter::for('login', fn (Request $request) => Limit::perMinute(config('rate_limits.login'))
+            ->by($request->ip().'|'.Str::lower((string) $request->input('email'))));
+
+        RateLimiter::for('register', fn (Request $request) => Limit::perMinute(config('rate_limits.register'))
+            ->by($request->ip()));
+
+        RateLimiter::for('support', fn (Request $request) => Limit::perMinute(config('rate_limits.support'))
+            ->by($request->user()?->id ?: $request->ip()));
     }
 }

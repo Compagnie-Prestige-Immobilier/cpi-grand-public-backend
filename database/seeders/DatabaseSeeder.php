@@ -13,11 +13,28 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Run Spatie permission seeder first
+        // Rôles et permissions : indispensables dans TOUS les environnements,
+        // production comprise — sans eux personne ne peut se connecter. Ce
+        // seeder ne crée aucun compte.
         $this->call(RoleAndPermissionSeeder::class);
 
-        // Comptes intégrés — firstOrCreate : le seeder tourne à chaque démarrage
-        // du conteneur (docker-entrypoint) sans jamais dupliquer ni écraser.
+        // Comptes de démonstration : JAMAIS en production.
+        //
+        // Ils étaient créés inconditionnellement, avec des identifiants publiés
+        // en clair dans le dépôt (admin@cpi.sn / admin1234, super-admin, toutes
+        // les permissions), et `docker-entrypoint.sh` exécute `db:seed` à chaque
+        // démarrage du conteneur qui sert le trafic. N'importe qui ayant lu ce
+        // fichier pouvait prendre le contrôle total de la plateforme.
+        //
+        // En production, le compte d'amorçage se crée hors du code source :
+        //   php artisan cpi:create-admin admin@cpi.sn
+        if (app()->isProduction()) {
+            $this->command->info('Environnement de production : comptes de démonstration ignorés.');
+            $this->command->info('Créer le compte d\'amorçage avec `php artisan cpi:create-admin <email>`.');
+
+            return;
+        }
+
         $agent = User::firstOrCreate(
             ['email' => 'agent@cpi.sn'],
             ['name' => 'Agent CPI', 'password' => Hash::make('agent1234')],

@@ -121,6 +121,12 @@ class DemandeController extends Controller
         $demande = $client->demande;
         abort_if($demande === null, 404, "Ce dossier n'a pas encore de demande à corriger.");
 
+        // Le middleware `staff` garantit le rôle, pas la permission : sans ceci,
+        // un agent sans `edit-client` écrivait dans la demande d'un dossier
+        // verrouillé alors que toutes les autres mutations staff du domaine
+        // passent par une policy. C'était le seul trou d'autorisation de l'API.
+        $this->authorize('updateAsStaff', $demande);
+
         // Valeurs d'avant, limitées aux champs réellement touchés : le journal
         // doit dire ce qui a changé, pas répéter toute la demande.
         $avant = collect($validated)
