@@ -8,14 +8,17 @@
     "require": {
         "php": "^8.3",
         "barryvdh/laravel-dompdf": "^3.1",
+        "brick/money": "^0.14.1",
         "dedoc/scramble": "^0.13.36",
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.0",
         "laravel/socialite": "^5.29",
         "laravel/tinker": "^3.0",
         "league/flysystem-aws-s3-v3": "^3.35",
+        "propaganistas/laravel-phone": "^6.0",
         "spatie/laravel-activitylog": "^4.12",
         "spatie/laravel-data": "^4.23",
+        "spatie/laravel-model-states": "^2.14",
         "spatie/laravel-permission": "^8.3",
         "spatie/laravel-query-builder": "^7.3",
         "spatie/laravel-typescript-transformer": "^3.3"
