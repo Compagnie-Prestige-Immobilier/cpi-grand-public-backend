@@ -10,6 +10,7 @@ use App\Models\Notification;
 use App\Models\RequisDoc;
 use App\Services\StorageService;
 use App\Support\TransitionStatut;
+use App\Support\VerrouDossier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -41,6 +42,12 @@ class DocController extends Controller
         $this->ensureRequiredDocs($client);
         $docRow = $this->findDoc($client, $doc);
         $this->authorize('deposit', $docRow);
+
+        // Le verrou d'analyse ne couvrait que la sauvegarde de la demande : un
+        // client pouvait remplacer sa pièce d'identité ou ses relevés bancaires
+        // APRÈS le début de l'instruction, sans que l'agent qui travaillait sur
+        // les pièces précédentes en soit informé.
+        VerrouDossier::refuserSiVerrouille($client, 'Dépôt impossible');
 
         $validated = $request->validate([
             'file' => 'required|file|max:10240|mimes:pdf,jpg,jpeg,png,webp',

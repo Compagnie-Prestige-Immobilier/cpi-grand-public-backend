@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\DemandeController;
 use App\Models\Client;
 use App\Models\Demande;
 use App\Models\User;
+use App\Support\VerrouDossier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
@@ -288,5 +289,20 @@ class DemandeTest extends TestCase
         $this->withToken($token)
             ->putJson("/api/staff/clients/{$client->id}/demande", ['commune' => 'Dakar'])
             ->assertForbidden();
+    }
+
+    public function test_a_client_cannot_submit_once_the_analysis_started(): void
+    {
+        // Soumettre après le début de l'analyse remettrait le dossier dans un
+        // état que l'agent croit figé.
+        [, $client, $token] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id, 'montant' => 25000000]);
+        $client->update(['dossier_etape' => VerrouDossier::ETAPE]);
+
+        $this->withToken($token)
+            ->postJson('/api/client/ma-demande/submit')
+            ->assertStatus(409);
+
+        $this->assertFalse($client->demande->refresh()->submitted);
     }
 }

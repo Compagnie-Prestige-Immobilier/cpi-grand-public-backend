@@ -9,6 +9,7 @@ use App\Models\Client;
 use App\Models\Demande;
 use App\Models\Notification;
 use App\Models\RequisDoc;
+use App\Support\VerrouDossier;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
@@ -46,7 +47,7 @@ class DemandeController extends Controller
         // Le verrou est ICI, côté serveur, et pas seulement dans l'interface :
         // masquer le bouton laisserait l'API grande ouverte.
         abort_if(
-            $client->dossier_etape >= self::ETAPE_VERROUILLAGE,
+            VerrouDossier::estVerrouille($client),
             409,
             "Votre dossier est en cours d'étude par CPI : les informations ne sont plus modifiables. Contactez votre conseiller pour toute correction.",
         );
@@ -78,6 +79,9 @@ class DemandeController extends Controller
         abort_if($demande === null, 404, 'Aucune demande à soumettre.');
 
         $this->authorize('update', $demande);
+        // Soumettre après le début de l'analyse remettrait le dossier dans un
+        // état que l'agent croit figé.
+        VerrouDossier::refuserSiVerrouille($client, 'Soumission impossible');
 
         $demande->update([
             'submitted' => true,
@@ -209,7 +213,8 @@ class DemandeController extends Controller
      * seulement *reçu* (il peut corriger une faute de frappe lui-même), et le
      * dossier se fige dès que CPI commence réellement à l'instruire.
      */
-    public const ETAPE_VERROUILLAGE = 3;
+    /** @deprecated Utiliser VerrouDossier::ETAPE — conservée le temps que les tests migrent. */
+    public const ETAPE_VERROUILLAGE = VerrouDossier::ETAPE;
 
     /** Libellés du parcours — miroir de TIMELINE_STEPS côté frontend. */
     private const ETAPES = [
