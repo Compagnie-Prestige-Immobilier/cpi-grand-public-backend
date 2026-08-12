@@ -6,15 +6,18 @@ use App\Http\Controllers\Api\DemandeController;
 use App\Models\Client;
 use App\Models\Demande;
 use App\Models\User;
+use App\Support\VerrouDossier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class DemandeTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     /**
      * @return array{0: User, 1: Client, 2: string}
@@ -255,6 +258,29 @@ class DemandeTest extends TestCase
         ]);
     }
 
+    public function test_a_staff_member_without_edit_client_cannot_correct_a_demande(): void
+    {
+        // Le middleware `staff` garantit le rôle, pas la permission. Cet
+        // endpoint était le seul de l'API à écrire sans passer par une policy :
+        // un agent privé de `edit-client` modifiait quand même la demande d'un
+        // dossier verrouillé.
+        [, $client] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id, 'commune' => 'Rufique']);
+
+        $agent = User::factory()->create();
+        $agent->assignRole('agent-cpi');
+        // La permission vient du rôle : la retirer du seul utilisateur ne
+        // changerait rien, `hasPermissionTo` la retrouverait via `agent-cpi`.
+        Role::findByName('agent-cpi')->revokePermissionTo('edit-client');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->putJson("/api/staff/clients/{$client->id}/demande", ['commune' => 'Rufisque'])
+            ->assertForbidden();
+
+        $this->assertSame('Rufique', $client->demande->refresh()->commune);
+    }
+
     public function test_a_client_cannot_correct_another_dossier(): void
     {
         [, $client, $token] = $this->makeClientUser();
@@ -263,5 +289,20 @@ class DemandeTest extends TestCase
         $this->withToken($token)
             ->putJson("/api/staff/clients/{$client->id}/demande", ['commune' => 'Dakar'])
             ->assertForbidden();
+    }
+
+    public function test_a_client_cannot_submit_once_the_analysis_started(): void
+    {
+        // Soumettre après le début de l'analyse remettrait le dossier dans un
+        // état que l'agent croit figé.
+        [, $client, $token] = $this->makeClientUser();
+        Demande::create(['client_id' => $client->id, 'montant' => 25000000]);
+        $client->update(['dossier_etape' => VerrouDossier::ETAPE]);
+
+        $this->withToken($token)
+            ->postJson('/api/client/ma-demande/submit')
+            ->assertStatus(409);
+
+        $this->assertFalse($client->demande->refresh()->submitted);
     }
 }

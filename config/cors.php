@@ -29,6 +29,11 @@ return [
 
     'max_age' => 0,
 
+    // Toujours `true` alors que l'API s'authentifie exclusivement par jeton
+    // porteur : le frontend envoie `withCredentials: true` sur toutes ses
+    // requêtes, et un navigateur BLOQUE la réponse si l'en-tête
+    // Access-Control-Allow-Credentials est absent. À repasser à `false` en même
+    // temps que le retrait de `withCredentials` côté frontend, pas avant.
     'supports_credentials' => true,
 
 ];

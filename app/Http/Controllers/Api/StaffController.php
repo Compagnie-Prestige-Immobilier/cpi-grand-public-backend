@@ -19,7 +19,9 @@ class StaffController extends Controller
     {
         $this->authorize('manage-staff');
 
-        $staff = User::role(['agent-cpi', 'super-admin'])->get();
+        // `UserData::fromModel` lit `$user->client` : sans eager-load, une
+        // requête supplémentaire par membre du personnel.
+        $staff = User::role(['agent-cpi', 'super-admin'])->with('client')->get();
 
         return response()->json([
             'data' => UserData::collect($staff),
@@ -39,8 +41,11 @@ class StaffController extends Controller
             'role' => 'required|in:agent-cpi,super-admin',
         ]);
 
-        // Generate a random temporary password
-        $tempPassword = Str::random(12);
+        // Mot de passe temporaire aligné sur la politique appliquée aux
+        // inscriptions (10 caractères minimum, lettres et chiffres) : il n'y
+        // avait aucune raison qu'un compte du personnel — qui accède à tous les
+        // dossiers — démarre avec une exigence plus faible qu'un compte client.
+        $tempPassword = Str::password(16, symbols: false);
 
         $user = User::create([
             'name' => $validated['name'],
@@ -49,6 +54,16 @@ class StaffController extends Controller
         ]);
 
         $user->assignRole($validated['role']);
+
+        // La création d'un compte capable de lire tous les dossiers clients ne
+        // laissait aucune trace : le journal d'activité couvrait les gestes
+        // métier mais pas les mouvements de comptes du personnel.
+        activity()
+            ->causedBy($request->user())
+            ->performedOn($user)
+            ->withProperties(['role' => $validated['role'], 'email' => $user->email])
+            ->event('compte-staff-cree')
+            ->log("{$request->user()?->name} a créé le compte {$validated['role']} de {$user->name}");
 
         // Return the temp password so the admin can share it with the new staff member
         return UserData::from($user)->additional(['temporary_password' => $tempPassword]);
@@ -70,6 +85,18 @@ class StaffController extends Controller
         if (! $user->hasAnyRole(['agent-cpi', 'super-admin'])) {
             return response()->json(['message' => "Cet utilisateur n'est pas un membre du personnel."], 422);
         }
+
+        // Journaliser AVANT la suppression : après, le nom et le rôle ne sont
+        // plus lisibles.
+        activity()
+            ->causedBy($request->user())
+            ->withProperties([
+                'role' => $user->getRoleNames()->first(),
+                'email' => $user->email,
+                'utilisateur_supprime' => $user->id,
+            ])
+            ->event('compte-staff-supprime')
+            ->log("{$request->user()?->name} a supprimé le compte de {$user->name}");
 
         $user->tokens()->delete();
         $user->delete();

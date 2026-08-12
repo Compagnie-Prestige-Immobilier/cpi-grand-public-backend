@@ -38,6 +38,21 @@ class StorageServiceTest extends TestCase
         }
     }
 
+    public function test_the_stored_extension_comes_from_the_content_not_from_the_declared_name(): void
+    {
+        Storage::fake('r2');
+
+        // Nom déclaré par le client : « contrat.pdf ». Type réel : PNG.
+        // `getClientOriginalExtension()` aurait stocké un `.pdf` mensonger, le
+        // chemin R2 ne disant alors rien de ce que le fichier contient.
+        $file = UploadedFile::fake()->create('contrat.pdf', 10, 'image/png');
+
+        $path = (new StorageService)->uploadCpiDoc('client-1', 'doc-1', $file);
+
+        $this->assertStringEndsWith('.png', $path);
+        $this->assertStringNotContainsString('.pdf', $path);
+    }
+
     public function test_delete_removes_the_file(): void
     {
         Storage::fake('r2');

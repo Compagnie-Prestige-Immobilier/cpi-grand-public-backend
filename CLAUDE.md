@@ -1,0 +1,91 @@
+# CPI Grand Public — API
+
+Backend Laravel 13 d'une plateforme de financement immobilier au Sénégal.
+Frontend React dans le dépôt voisin `cpi-grand-public-frontend`.
+
+## Avant de toucher au code
+
+Lire `docs/glossaire.md`. Le vocabulaire métier est en français et n'est pas
+devinable : `demande`, `chantier`, `tranche`, `décaissement`, `requis`,
+`foncier`, `dossier_etape`. Ne pas traduire un terme métier en anglais dans une
+nouvelle table ou un nouveau champ — le code mélange délibérément français
+(métier) et anglais (technique).
+
+`docs/roles-et-permissions.md` et `docs/statuts.md` décrivent le contrôle
+d'accès et les machines à états. Les modifier sans modifier respectivement
+`RoleAndPermissionSeeder` et `App\Enums` ne change rien : ce sont des reflets,
+pas des sources.
+
+## Vérification
+
+```
+composer check     # pint + phpstan + tests, dans cet ordre
+```
+
+À lancer avant chaque commit. `composer analyse` seul suffit rarement : les
+tests attrapent des choses que l'analyse statique ne voit pas, et
+réciproquement. `php artisan test` boote l'application entière — c'est ce qui
+détecte une erreur dans `bootstrap/app.php` qu'aucun test ne cible.
+
+## Pièges connus de ce projet
+
+- **`config()` n'est pas disponible dans `bootstrap/app.php`.** Le conteneur n'y
+  a pas encore lié la configuration. Et `env()` n'y répond plus après
+  `php artisan optimize`, que l'entrypoint Docker exécute au démarrage. Tout ce
+  qui a besoin de configuration va dans un service provider.
+- **Le cache des permissions Spatie.** `RoleAndPermissionSeeder` le vide avant
+  ET après écriture. Une permission ajoutée sans vider après reste invisible
+  d'un `hasPermissionTo` déjà servi par un cache antérieur — le symptôme est un
+  403 sur un compte qui détient pourtant la permission en base.
+- **Le garde d'authentification mémorise l'utilisateur.** Dans un test qui
+  enchaîne deux requêtes avec des jetons différents, la seconde est vue comme le
+  premier utilisateur. `Tests\TestCase::withToken` purge les gardes ; ne pas
+  contourner cette surcharge.
+- **Les contraintes d'unicité comptent les lignes en corbeille.** Les
+  suppressions sont douces : toute recréation d'une ligne `hasOne` doit passer
+  par `withTrashed()` et restaurer, sinon elle échoue sur une violation
+  d'unicité.
+- **Composer résout contre PHP 8.3.33**, fixé par `config.platform.php`, parce
+  que c'est la version de l'image de production et de l'intégration continue.
+  Sans ce réglage, un `composer require` lancé depuis un poste en PHP 8.5
+  accepte un paquet qui exige 8.4 et casse le build — c'est arrivé.
+- **Les types TypeScript du frontend sont générés depuis les DTO** et écrits
+  dans le dépôt voisin (`config/typescript.php`). Après tout changement de DTO :
+  `php artisan typescript:transform`, puis committer **des deux côtés**.
+
+## Ce qui n'est pas encore fait
+
+Par ordre de valeur décroissante — c'est la suite du chantier, pas une liste de
+souhaits.
+
+1. **`Decaissement.tranches` (JSON, sans montant par tranche) et
+   `chantier_tranches` (table relationnelle) décrivent le même découpage sans
+   être reliés.** Les deux dérivent de `App\Support\ConstructionTranches`
+   depuis la remédiation, mais la réconciliation — montant par tranche, table
+   relationnelle, lien avec l'avancement des travaux — reste à faire. Tant
+   qu'elle n'est pas faite, le contrôle d'enveloppe ne peut vérifier que le
+   total, pas la ventilation.
+2. **Aucune colonne de devise** : XOF est une hypothèse implicite partout.
+   `App\Casts\MoneyCast` et `brick/money` sont en place et testés, mais aucune
+   colonne ne les utilise encore. La migration est additive (paires
+   `<champ>_amount` / `<champ>_currency`) et doit auditer les montants à
+   décimale non nulle AVANT d'arrondir quoi que ce soit.
+3. **`Demande` n'a aucune colonne de statut** ; le moteur d'état réel est
+   `Client.dossier_etape`, un entier piloté à la main. Les quatre autres modèles
+   ont leur machine à états ; celui-là non.
+4. **`Client.statut`** est un texte libre décoratif, lu par aucune logique
+   métier. Ne rien y accrocher — le supprimer ou le rendre calculé.
+5. **Aucune classe `FormRequest`** : la validation reste en ligne dans les
+   contrôleurs, une trentaine de fois.
+6. **Le système de notifications est maison** (`App\Models\Notification` +
+   `NotificationController`) et duplique `illuminate/notifications`. Le trait
+   `Notifiable` est déjà sur `User`, inutilisé.
+7. **66 `response()->json(['data' => X::from(...)])`** alors que
+   `config/data.php` déclare déjà `'wrap' => 'data'`. `StaffController::createStaff`
+   montre la forme correcte : retourner le `Data` directement.
+8. **Aucune factory** sauf `UserFactory` ; `DemoDataService` (635 lignes)
+   réimplémente ce que feraient des factories et Faker.
+9. **Larastan niveau 7** : 4 erreurs réelles nommées dans `phpstan.neon`.
+10. **Actions GitHub référencées par tag mutable** plutôt que par SHA épinglé,
+    et le Dockerfile n'a pas de directive `USER` (supervisord a besoin de root
+    au PID 1 ; les workers, eux, tournent déjà en `www-data`).

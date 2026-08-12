@@ -2,6 +2,7 @@
 
 namespace App\Dto;
 
+use App\Enums\BankAssignmentStatut;
 use App\Models\BankAssignment;
 use Spatie\LaravelData\Attributes\MapInputName;
 use Spatie\LaravelData\Data;
@@ -24,7 +25,7 @@ class BankAssignmentData extends Data
         public readonly string $clientId,
         public readonly string $bankId,
         public readonly string $bankName,
-        public readonly string $status,   // en-attente | accord | refus
+        public readonly BankAssignmentStatut $status,   // en-attente | accord | refus
     ) {}
 
     /**

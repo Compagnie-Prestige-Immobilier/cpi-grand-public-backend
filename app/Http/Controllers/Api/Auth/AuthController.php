@@ -10,11 +10,23 @@ use App\Services\StorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
+    /**
+     * Empreinte d'un mot de passe qui n'appartient à personne.
+     *
+     * Comparée quand l'adresse est inconnue, pour que le temps de réponse ne
+     * distingue pas « compte inexistant » de « mot de passe faux » — sinon
+     * l'énumération redevient possible au chronomètre, malgré un message
+     * uniforme.
+     */
+    private const HASH_FACTICE = '$2y$12$SGdUeIA9AmSHOOJoiTPnzOoRlXOKgLM0LnJd7ptYuGGD2kK5LSb1S';
+
     public function __construct(private readonly StorageService $storage) {}
 
     /**
@@ -25,26 +37,36 @@ class AuthController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:8',
+            'password' => ['required', 'string', Password::defaults()],
             'phone' => 'nullable|string|max:50',
         ]);
 
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'phone' => $validated['phone'] ?? null,
-        ]);
-        $user->assignRole('client');
+        // Une inscription écrit dans users, model_has_roles, clients, puis —
+        // par `Client::booted()` — requis_docs, decaissements, chantiers et
+        // chantier_tranches. Sans transaction, un échec à mi-parcours laissait
+        // un compte sans dossier, ou un dossier sans pièces : l'utilisateur
+        // pouvait se connecter dans une application qui ne savait plus quoi lui
+        // montrer, et rien ne permettait de rejouer la création.
+        $user = DB::transaction(function () use ($validated): User {
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'phone' => $validated['phone'] ?? null,
+            ]);
+            $user->assignRole('client');
 
-        Client::create([
-            'user_id' => $user->id,
-            'name' => $user->name,
-            'ref' => Client::generateRef(),
-            'email' => $user->email,
-            'phone' => $user->phone,
-            'date_inscription' => now(),
-        ]);
+            Client::create([
+                'user_id' => $user->id,
+                'name' => $user->name,
+                'ref' => Client::generateRef(),
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'date_inscription' => now(),
+            ]);
+
+            return $user;
+        });
 
         $token = $user->createToken('api-token')->plainTextToken;
 
@@ -63,12 +85,25 @@ class AuthController extends Controller
 
         $user = User::query()->where('email', $validated['email'])->first();
 
-        // Compte Google sans mot de passe : refuser proprement la connexion par mot de passe.
-        if ($user !== null && $user->password === null) {
-            return response()->json(['message' => 'Ce compte utilise Google.'], 422);
-        }
+        // Une seule réponse pour tous les échecs : compte inexistant, mot de
+        // passe faux, ou compte Google sans mot de passe local.
+        //
+        // Distinguer « Ce compte utilise Google » (422) de « Identifiants
+        // invalides » (401) permettait d'énumérer les comptes : sur une
+        // plateforme de financement, savoir qu'une adresse a un dossier chez CPI
+        // est déjà une information. Le prix est un message moins précis pour
+        // l'utilisateur Google — l'écran de connexion propose le bouton Google
+        // juste à côté.
+        //
+        // `Hash::check` est appelé même sans utilisateur pour que la durée de
+        // réponse ne trahisse pas l'existence du compte.
+        $empreinte = $user !== null && $user->password !== null
+            ? $user->password
+            : self::HASH_FACTICE;
 
-        if ($user === null || ! Hash::check($validated['password'], $user->password)) {
+        $motDePasseValide = Hash::check($validated['password'], $empreinte);
+
+        if ($user === null || $user->password === null || ! $motDePasseValide) {
             return response()->json(['message' => 'Identifiants invalides.'], 401);
         }
 

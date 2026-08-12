@@ -57,7 +57,15 @@ class ImpersonationController extends Controller
         // devient impossible à déterminer.
         abort_if($this->estUneImpersonation($request), 409, 'Une prise en main est déjà en cours.');
 
-        $jeton = $user->createToken(self::PREFIXE.$operateur->getKey());
+        // Durée de vie très courte : ce jeton ouvre le dossier complet d'un
+        // client (pièces d'identité, montants, documents contractuels). Il
+        // n'expirait jamais — un jeton d'assistance oublié dans un
+        // localStorage restait valable indéfiniment.
+        $jeton = $user->createToken(
+            self::PREFIXE.$operateur->getKey(),
+            ['*'],
+            now()->addMinutes((int) config('sanctum.impersonation_expiration')),
+        );
 
         activity()
             ->causedBy($operateur)

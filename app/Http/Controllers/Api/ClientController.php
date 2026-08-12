@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\ClientData;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
-use App\Models\RequisDoc;
 use App\Services\DemoDataService;
-use Illuminate\Database\Eloquent\Collection;
+use App\Services\NotifieLeClient;
+use App\Support\ParcoursDossier;
+use App\Support\PortefeuilleConseiller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +17,10 @@ use Spatie\LaravelData\PaginatedDataCollection;
 
 class ClientController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
+    public function __construct(private readonly NotifieLeClient $notifie) {}
+
     // ─── Espace client (self-service) ─────────────────────────
 
     /**
@@ -66,15 +72,18 @@ class ClientController extends Controller
      * GET /staff/clients — liste paginée (relations chargées pour que les
      * tableaux de bord staff s'alimentent en un seul appel).
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Client::class);
 
+        // La policy `view` cloisonne dossier par dossier ; la liste doit être
+        // filtrée à la source, sinon un agent verrait les noms, références et
+        // montants de tout le portefeuille CPI avant même de cliquer.
+        $query = Client::query()->with('demande', 'requisDocs');
+        PortefeuilleConseiller::filtrer($query, $request->user());
+
         return response()->json(ClientData::collect(
-            Client::query()
-                ->with('demande', 'requisDocs')
-                ->orderByDesc('created_at')
-                ->paginate(50),
+            $query->orderByDesc('created_at')->paginate(50),
             PaginatedDataCollection::class,
         ));
     }
@@ -111,7 +120,7 @@ class ClientController extends Controller
         ]);
 
         $client = Client::create([
-            ...collect($validated)->filter(fn ($v) => $v !== null)->all(),
+            ...array_filter($validated, fn ($v) => $v !== null),
             'ref' => Client::generateRef(),
             'date_inscription' => $validated['date_inscription'] ?? now(),
         ])->refresh();
@@ -207,6 +216,8 @@ class ClientController extends Controller
             ->event('dossier-etape')
             ->log("{$request->user()?->name} a défini l'étape du dossier de {$client->name} à {$validated['etape']}");
 
+        $this->notifie->etapeDossier($client, (int) $validated['etape']);
+
         return response()->json(['data' => ClientData::from($client->refresh())]);
     }
 
@@ -296,43 +307,17 @@ class ClientController extends Controller
 
     // ─── Helpers ──────────────────────────────────────────────
 
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
-
     private function journeyResponse(Client $client): JsonResponse
     {
         $client->loadMissing('demande', 'requisDocs');
 
         $submitted = (bool) $client->demande?->submitted;
-        $step = $this->computeJourneyStep($submitted, $client->requisDocs, $client->dossier_etape);
+        $step = ParcoursDossier::etape($submitted, $client->requisDocs, $client->dossier_etape);
 
         return response()->json(['data' => [
             'step' => $step,
             'submitted' => $submitted,
             'dossierEtape' => $client->dossier_etape,
         ]]);
-    }
-
-    /**
-     * Porté de dossierJourney.ts — le backend est la source de vérité.
-     *
-     * @param  Collection<int, RequisDoc>  $docs
-     */
-    private function computeJourneyStep(bool $submitted, Collection $docs, int $etapeCpi = 2): int
-    {
-        if (! $submitted) {
-            return 0;
-        }
-        $allValid = $docs->isNotEmpty() && $docs->every(fn (RequisDoc $d) => $d->status === 'accepte');
-        if (! $allValid) {
-            return 1;
-        }
-
-        return min(5, max(2, $etapeCpi));
     }
 }

@@ -30,10 +30,20 @@ class DecaissementPolicy
 
     /**
      * Validation d'une étape : décaissement du terrain, étape foncière, tranche
-     * de construction.
+     * de construction. Autrement dit, le déclenchement d'un versement d'argent
+     * réel.
+     *
+     * Contrôle à quatre yeux : cette permission est distincte de
+     * `manage-decaissements` (préparation du dossier) et n'est PAS accordée au
+     * rôle `agent-cpi`. Avant, un seul compte agent compromis ou malveillant
+     * suffisait à préparer ET valider un versement.
+     *
+     * La seconde moitié du contrôle — le valideur ne peut pas être celui qui a
+     * préparé — est appliquée dans DecaissementController, qui seul connaît
+     * l'utilisateur courant de la requête.
      */
-    public function validate(User $user, Decaissement $decaissement): bool
+    public function declencherVersement(User $user, Decaissement $decaissement): bool
     {
-        return $user->hasPermissionTo('manage-decaissements');
+        return $user->hasPermissionTo('validate-decaissements');
     }
 }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Les deux colonnes JSON ne sont pas déductibles du schéma (`json` → string) :
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Decaissement extends Model
 {
-    use HasUuids;
+    use HasUuids, SoftDeletes;
 
     /**
      * Construction financée en 4 tranches (35 / 30 / 30 / 5 %) — la colonne
@@ -49,6 +50,7 @@ class Decaissement extends Model
      */
     protected $fillable = [
         'client_id',
+        'prepared_by',
         'terrain_montant',
         'terrain_decaisse',
         'terrain_date',

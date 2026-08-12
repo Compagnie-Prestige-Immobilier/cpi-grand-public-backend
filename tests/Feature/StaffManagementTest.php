@@ -13,7 +13,7 @@ class StaffManagementTest extends TestCase
     /**
      * Run the DatabaseSeeder before each test.
      */
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function adminToken(): string
     {
@@ -48,7 +48,10 @@ class StaffManagementTest extends TestCase
 
         $tempPassword = $response->json('temporary_password');
         $this->assertIsString($tempPassword);
-        $this->assertSame(12, strlen($tempPassword));
+        // Aligné sur la politique appliquée aux inscriptions : un compte du
+        // personnel accède à tous les dossiers, il n'a pas à démarrer avec une
+        // exigence plus faible qu'un compte client.
+        $this->assertSame(16, strlen($tempPassword));
 
         /** @var User $created */
         $created = User::query()->where('email', 'nouvel.agent@cpi.sn')->firstOrFail();
@@ -91,7 +94,7 @@ class StaffManagementTest extends TestCase
         $response = $this->withToken($this->adminToken())->getJson('/api/staff/staff/list');
 
         $response->assertOk();
-        $emails = collect($response->json('data'))->pluck('email');
+        $emails = array_column((array) $response->json('data'), 'email');
         $this->assertContains('agent@cpi.sn', $emails);
         $this->assertContains('admin@cpi.sn', $emails);
     }
@@ -144,5 +147,27 @@ class StaffManagementTest extends TestCase
             ->assertStatus(422);
 
         $this->assertDatabaseHas('users', ['id' => $client->id]);
+    }
+
+    public function test_creating_and_deleting_a_staff_account_is_journalled(): void
+    {
+        // La création d'un compte capable de lire tous les dossiers clients ne
+        // laissait aucune trace : le journal couvrait les gestes métier, pas
+        // les mouvements de comptes du personnel.
+        $reponse = $this->withToken($this->adminToken())->postJson('/api/staff/staff/create', [
+            'name' => 'Agent Journalisé',
+            'email' => 'journalise@cpi.sn',
+            'role' => 'agent-cpi',
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('activity_log', ['event' => 'compte-staff-cree']);
+
+        $id = $reponse->json('data.id');
+
+        $this->withToken($this->adminToken())
+            ->deleteJson("/api/staff/staff/{$id}")
+            ->assertOk();
+
+        $this->assertDatabaseHas('activity_log', ['event' => 'compte-staff-supprime']);
     }
 }

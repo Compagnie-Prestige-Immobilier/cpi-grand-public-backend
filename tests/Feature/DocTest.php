@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Client;
 use App\Models\User;
+use App\Support\VerrouDossier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -17,7 +18,7 @@ class DocTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     /**
      * @return array{0: User, 1: Client, 2: string}
@@ -107,12 +108,13 @@ class DocTest extends TestCase
 
         $docs = $this->withToken($token)->getJson('/api/client/mes-documents')->assertOk()->json('data');
 
-        $identite = collect($docs)->firstWhere('docId', 'identite');
+        $parDocId = array_column((array) $docs, null, 'docId');
+        $identite = $parDocId['identite'];
         $this->assertStringContainsString("docs/{$client->id}/identite_v1.pdf", $identite['fileUrl']);
         $this->assertStringContainsString('expires=', $identite['fileUrl']);
 
         // Les pièces non déposées n'ont aucun lien.
-        $this->assertNull(collect($docs)->firstWhere('docId', 'revenus')['fileUrl']);
+        $this->assertNull($parDocId['revenus']['fileUrl']);
     }
 
     public function test_second_deposit_increments_version(): void
@@ -257,5 +259,37 @@ class DocTest extends TestCase
     {
         $this->getJson('/api/client/mes-documents')->assertStatus(401);
         $this->postJson('/api/client/mes-documents/identite/deposit')->assertStatus(401);
+    }
+
+    // ─── Verrou d'analyse ─────────────────────────────────────
+
+    public function test_a_client_cannot_deposit_once_the_analysis_started(): void
+    {
+        // Le verrou ne couvrait que la sauvegarde de la demande. Un client
+        // pouvait remplacer sa pièce d'identité ou ses relevés bancaires APRÈS
+        // le début de l'instruction, sans que l'agent qui travaillait sur les
+        // pièces précédentes en soit informé.
+        [, $client, $token] = $this->makeClientUser();
+        $client->update(['dossier_etape' => VerrouDossier::ETAPE]);
+
+        $this->withToken($token)
+            ->postJson('/api/client/mes-documents/identite/deposit', [
+                'file' => UploadedFile::fake()->create('nouvelle-piece.pdf', 120, 'application/pdf'),
+            ])
+            ->assertStatus(409);
+
+        $this->assertSame(0, $client->requisDocs()->where('doc_id', 'identite')->first()->version);
+    }
+
+    public function test_a_client_can_still_deposit_before_the_analysis(): void
+    {
+        [, $client, $token] = $this->makeClientUser();
+        $client->update(['dossier_etape' => VerrouDossier::ETAPE - 1]);
+
+        $this->withToken($token)
+            ->postJson('/api/client/mes-documents/identite/deposit', [
+                'file' => UploadedFile::fake()->create('piece.pdf', 120, 'application/pdf'),
+            ])
+            ->assertOk();
     }
 }

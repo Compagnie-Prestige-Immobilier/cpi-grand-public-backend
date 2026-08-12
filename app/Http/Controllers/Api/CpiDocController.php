@@ -3,19 +3,30 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\CpiDocData;
+use App\Enums\CpiDocStatut;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\CpiDoc;
+use App\Services\NotifieLeClient;
 use App\Services\StorageService;
+use App\Support\BorneListe;
+use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Number;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\QueryBuilder;
 
 class CpiDocController extends Controller
 {
-    public function __construct(private readonly StorageService $storage) {}
+    use ResoudLeDossierDuClient;
+
+    public function __construct(
+        private readonly StorageService $storage,
+        private readonly NotifieLeClient $notifie,
+    ) {}
 
     // ─── Espace client ────────────────────────────────────────
 
@@ -29,6 +40,8 @@ class CpiDocController extends Controller
         $docs = $client->cpiDocs()
             ->where('visible_client', true)
             ->orderByDesc('created_at')
+            // Borne anti-déni de service : voir App\Support\BorneListe.
+            ->limit(BorneListe::MAX)
             ->get();
 
         return response()->json(['data' => CpiDocData::collect($docs)]);
@@ -41,8 +54,10 @@ class CpiDocController extends Controller
     {
         $this->authorize('signAsClient', $doc);
 
+        TransitionStatut::verifier($doc->status, CpiDocStatut::Signe, 'Signature du document');
+
         $doc->update([
-            'status' => 'signe',
+            'status' => CpiDocStatut::Signe,
             'signature_requise' => false,
             'date_publication' => now(),
         ]);
@@ -100,7 +115,7 @@ class CpiDocController extends Controller
         ]);
 
         $doc = CpiDoc::create([
-            ...collect($validated)->filter(fn ($v) => $v !== null)->all(),
+            ...array_filter($validated, fn ($v) => $v !== null),
             'auteur' => $request->user()->name,
             'date_creation' => now(),
         ])->refresh();
@@ -168,7 +183,7 @@ class CpiDocController extends Controller
         $cpiDoc->update([
             'file_path' => $path,
             'fichier' => $file->getClientOriginalName(),
-            'taille' => $this->humanSize($file->getSize()),
+            'taille' => Number::fileSize($file->getSize()),
             'format' => strtoupper($file->getClientOriginalExtension()),
         ]);
 
@@ -180,18 +195,6 @@ class CpiDocController extends Controller
             ->log("{$request->user()?->name} a joint un fichier au document {$cpiDoc->nom}");
 
         return response()->json(['data' => CpiDocData::from($cpiDoc->refresh())]);
-    }
-
-    private function humanSize(int $bytes): string
-    {
-        if ($bytes >= 1048576) {
-            return number_format($bytes / 1048576, 1, ',', ' ').' Mo';
-        }
-        if ($bytes >= 1024) {
-            return number_format($bytes / 1024, 0, ',', ' ').' Ko';
-        }
-
-        return $bytes.' o';
     }
 
     /**
@@ -223,8 +226,14 @@ class CpiDocController extends Controller
     {
         $this->authorize('publish', $cpiDoc);
 
+        TransitionStatut::verifier(
+            $cpiDoc->status,
+            $cpiDoc->signature_requise ? CpiDocStatut::ASigner : CpiDocStatut::Disponible,
+            'Publication du document',
+        );
+
         $cpiDoc->update([
-            'status' => $cpiDoc->signature_requise ? 'a-signer' : 'disponible',
+            'status' => $cpiDoc->signature_requise ? CpiDocStatut::ASigner : CpiDocStatut::Disponible,
             'visible_client' => true,
             'date_publication' => now(),
         ]);
@@ -236,6 +245,14 @@ class CpiDocController extends Controller
             ->event('cpi-doc-publie')
             ->log("{$request->user()?->name} a publié le document {$cpiDoc->nom}");
 
+        // Un contrat mis à disposition — a fortiori à signer — sans que le
+        // client en soit averti reste invisible jusqu'à sa prochaine visite.
+        if ($cpiDoc->client !== null) {
+            $cpiDoc->signature_requise
+                ? $this->notifie->documentASigner($cpiDoc->client, $cpiDoc->nom)
+                : $this->notifie->documentDisponible($cpiDoc->client, $cpiDoc->nom);
+        }
+
         return response()->json(['data' => CpiDocData::from($cpiDoc->refresh())]);
     }
 
@@ -246,8 +263,10 @@ class CpiDocController extends Controller
     {
         $this->authorize('archive', $cpiDoc);
 
+        TransitionStatut::verifier($cpiDoc->status, CpiDocStatut::Archive, 'Archivage du document');
+
         $cpiDoc->update([
-            'status' => 'archive',
+            'status' => CpiDocStatut::Archive,
             'visible_client' => false,
         ]);
 
@@ -268,8 +287,10 @@ class CpiDocController extends Controller
     {
         $this->authorize('sign', $cpiDoc);
 
+        TransitionStatut::verifier($cpiDoc->status, CpiDocStatut::Signe, 'Signature du document');
+
         $cpiDoc->update([
-            'status' => 'signe',
+            'status' => CpiDocStatut::Signe,
             'signature_requise' => false,
             'date_publication' => now(),
         ]);
@@ -286,11 +307,4 @@ class CpiDocController extends Controller
 
     // ─── Helpers ──────────────────────────────────────────────
 
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
 }

@@ -22,4 +22,15 @@ class DemandePolicy
         // Seul le client propriétaire modifie/soumet sa demande.
         return $user->id === $demande->client?->user_id;
     }
+
+    /**
+     * Correction d'une demande par le personnel CPI, y compris après
+     * verrouillage du dossier. Distincte de `update` : celle-ci est réservée au
+     * client propriétaire, celle-là au staff habilité à écrire dans un dossier.
+     */
+    public function updateAsStaff(User $user, Demande $demande): bool
+    {
+        return $user->hasAnyRole(['agent-cpi', 'super-admin'])
+            && $user->hasPermissionTo('edit-client');
+    }
 }

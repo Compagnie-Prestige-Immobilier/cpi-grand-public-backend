@@ -108,7 +108,8 @@ ENV PHP_FPM_MAX_CHILDREN=12 \
 # notifications/e-mails move to a queue.
 ENV RUN_QUEUE_WORKER=false \
     RUN_SCHEDULER=false \
-    RUN_MIGRATIONS=true
+    RUN_MIGRATIONS=true \
+    RUN_SEEDERS=false
 
 WORKDIR /var/www
 

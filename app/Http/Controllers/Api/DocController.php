@@ -3,18 +3,25 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\RequisDocData;
+use App\Enums\RequisDocStatut;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Notification;
 use App\Models\RequisDoc;
 use App\Services\StorageService;
+use App\Support\TransitionStatut;
+use App\Support\VerrouDossier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Number;
 
 class DocController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     public function __construct(private readonly StorageService $storage) {}
 
     // ─── Espace client ────────────────────────────────────────
@@ -40,6 +47,12 @@ class DocController extends Controller
         $docRow = $this->findDoc($client, $doc);
         $this->authorize('deposit', $docRow);
 
+        // Le verrou d'analyse ne couvrait que la sauvegarde de la demande : un
+        // client pouvait remplacer sa pièce d'identité ou ses relevés bancaires
+        // APRÈS le début de l'instruction, sans que l'agent qui travaillait sur
+        // les pièces précédentes en soit informé.
+        VerrouDossier::refuserSiVerrouille($client, 'Dépôt impossible');
+
         $validated = $request->validate([
             'file' => 'required|file|max:10240|mimes:pdf,jpg,jpeg,png,webp',
         ]);
@@ -49,13 +62,19 @@ class DocController extends Controller
         $version = $docRow->version + 1;
         $path = $this->storage->uploadDoc($client->id, $docRow->doc_id, $file, $version);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::Depose,
+            'Dépôt de la pièce',
+        );
+
         $docRow->update([
-            'status' => 'depose',
+            'status' => RequisDocStatut::Depose,
             'version' => $version,
             'file_path' => $path,
             'submitted_label' => $file->getClientOriginalName(),
             'date' => now()->format('d/m/Y'),
-            'taille' => $this->humanSize($file->getSize()),
+            'taille' => Number::fileSize($file->getSize()),
             'commentaire' => null,
             'agent_name' => null,
             'date_validation' => null,
@@ -92,8 +111,14 @@ class DocController extends Controller
         $docRow = $this->findDoc($client, $doc);
         $this->authorize('validate', $docRow);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::Accepte,
+            'Validation de la pièce',
+        );
+
         $docRow->update([
-            'status' => 'accepte',
+            'status' => RequisDocStatut::Accepte,
             'date_validation' => now(),
             'agent_name' => $request->user()?->name,
             'commentaire' => null,
@@ -126,8 +151,14 @@ class DocController extends Controller
 
         $validated = $request->validate(['comment' => 'required|string|max:2000']);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::Refuse,
+            'Refus de la pièce',
+        );
+
         $docRow->update([
-            'status' => 'refuse',
+            'status' => RequisDocStatut::Refuse,
             'commentaire' => $validated['comment'],
             'agent_name' => $request->user()?->name,
             'date_validation' => null,
@@ -160,8 +191,14 @@ class DocController extends Controller
 
         $validated = $request->validate(['comment' => 'required|string|max:2000']);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::ARemplacer,
+            'Demande de remplacement',
+        );
+
         $docRow->update([
-            'status' => 'a-remplacer',
+            'status' => RequisDocStatut::ARemplacer,
             'commentaire' => $validated['comment'],
             'agent_name' => $request->user()?->name,
             'date_validation' => null,
@@ -192,8 +229,14 @@ class DocController extends Controller
         $docRow = $this->findDoc($client, $doc);
         $this->authorize('validate', $docRow);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::Verification,
+            'Remise en vérification',
+        );
+
         $docRow->update([
-            'status' => 'verification',
+            'status' => RequisDocStatut::Verification,
             'agent_name' => $request->user()?->name,
             'date_validation' => null,
         ]);
@@ -209,14 +252,6 @@ class DocController extends Controller
     }
 
     // ─── Helpers ──────────────────────────────────────────────
-
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
 
     /**
      * Rattrapage pour les dossiers antérieurs à la création automatique des
@@ -271,17 +306,5 @@ class DocController extends Controller
         abort_if($doc === null, 404, 'Document requis introuvable.');
 
         return $doc;
-    }
-
-    private function humanSize(int $bytes): string
-    {
-        if ($bytes >= 1048576) {
-            return number_format($bytes / 1048576, 1, ',', ' ').' Mo';
-        }
-        if ($bytes >= 1024) {
-            return number_format($bytes / 1024, 0, ',', ' ').' Ko';
-        }
-
-        return $bytes.' o';
     }
 }

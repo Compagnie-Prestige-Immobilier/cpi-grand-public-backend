@@ -18,7 +18,7 @@ class ChantierTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function agentToken(): string
     {
@@ -85,7 +85,10 @@ class ChantierTest extends TestCase
     public function test_show_creates_the_row_on_demand_for_a_legacy_client(): void
     {
         $client = $this->makeClient();
-        Chantier::query()->where('client_id', $client->id)->delete();
+        // `forceDelete` : depuis l'introduction des suppressions douces, un
+        // `delete()` laisserait la ligne en base avec un `deleted_at` — ce que
+        // ce test veut simuler, c'est un dossier qui n'a JAMAIS eu de chantier.
+        Chantier::query()->where('client_id', $client->id)->forceDelete();
         $this->assertDatabaseMissing('chantiers', ['client_id' => $client->id]);
 
         $this->withToken($this->agentToken())->getJson('/api/staff/chantiers/'.$client->id)
@@ -270,10 +273,40 @@ class ChantierTest extends TestCase
         $client = $this->makeClient();
 
         $this->withToken($this->adminToken())->getJson('/api/staff/chantiers/'.$client->id)->assertOk();
+
+        // Le chantier suit son cours : non démarré → en cours → terminé →
+        // livré. Sauter directement à « livré » depuis « non démarré » décrit
+        // une réalité impossible et est désormais refusé.
+        foreach (['en-cours', 'termine', 'livre'] as $etape) {
+            $this->withToken($this->adminToken())
+                ->postJson('/api/staff/chantiers/'.$client->id.'/statut', ['statut' => $etape])
+                ->assertOk()
+                ->assertJsonPath('data.statut', $etape);
+        }
+    }
+
+    public function test_a_chantier_cannot_jump_straight_to_delivered(): void
+    {
+        // `Rule::in` validait la valeur, jamais la transition : un chantier
+        // pouvait passer de « non démarré » à « livré », ou revenir en arrière
+        // après livraison, ce que le client voyait sans explication.
+        $client = $this->makeClient();
+
         $this->withToken($this->adminToken())
             ->postJson('/api/staff/chantiers/'.$client->id.'/statut', ['statut' => 'livre'])
-            ->assertOk()
-            ->assertJsonPath('data.statut', 'livre');
+            ->assertStatus(409);
+
+        $this->assertSame('non-demarre', $client->chantier->refresh()->statut->value);
+    }
+
+    public function test_a_delivered_chantier_cannot_go_back(): void
+    {
+        $client = $this->makeClient();
+        $client->chantier->update(['statut' => 'livre']);
+
+        $this->withToken($this->adminToken())
+            ->postJson('/api/staff/chantiers/'.$client->id.'/statut', ['statut' => 'en-cours'])
+            ->assertStatus(409);
     }
 
     // ─── Séparation des rôles ─────────────────────────────────
