@@ -20,7 +20,7 @@ class StorageService
      */
     public function uploadDoc(string $clientId, string $docId, UploadedFile $file, int $version): string
     {
-        return $this->put("docs/{$clientId}/{$docId}_v{$version}.".$file->getClientOriginalExtension(), $file);
+        return $this->put("docs/{$clientId}/{$docId}_v{$version}.".self::extension($file), $file);
     }
 
     /**
@@ -28,7 +28,7 @@ class StorageService
      */
     public function uploadCpiDoc(string $clientId, string $docId, UploadedFile $file): string
     {
-        return $this->put("cpi-docs/{$clientId}/{$docId}.".$file->getClientOriginalExtension(), $file);
+        return $this->put("cpi-docs/{$clientId}/{$docId}.".self::extension($file), $file);
     }
 
     /**
@@ -36,7 +36,7 @@ class StorageService
      */
     public function uploadChantierMedia(string $clientId, string $mediaId, UploadedFile $file): string
     {
-        return $this->put("chantier/{$clientId}/{$mediaId}.".$file->getClientOriginalExtension(), $file);
+        return $this->put("chantier/{$clientId}/{$mediaId}.".self::extension($file), $file);
     }
 
     /**
@@ -44,15 +44,44 @@ class StorageService
      */
     public function uploadAvatar(string $userId, UploadedFile $file): string
     {
-        return $this->put("avatars/{$userId}.".$file->getClientOriginalExtension(), $file);
+        return $this->put("avatars/{$userId}.".self::extension($file), $file);
+    }
+
+    /**
+     * Extension du fichier stocké, déduite du CONTENU et non du nom fourni.
+     *
+     * `getClientOriginalExtension()` renvoie l'extension du nom envoyé par le
+     * navigateur : entièrement contrôlée par l'appelant. Un fichier déposé sous
+     * le nom « contrat.pdf » mais contenant du HTML était stocké en `.pdf`, et
+     * l'extension du chemin R2 ne disait donc rien de ce qu'il contenait
+     * réellement. `extension()` s'appuie sur le type MIME détecté côté serveur.
+     *
+     * La validation des routes (`mimes:pdf,jpg,...`) reste le vrai filtre : ce
+     * correctif garantit seulement que le chemin stocké décrit le contenu.
+     */
+    private static function extension(UploadedFile $file): string
+    {
+        return $file->extension() ?: 'bin';
     }
 
     /**
      * URL signée de courte durée — la SEULE façon de servir les fichiers.
+     *
+     * `ResponseContentDisposition` force le téléchargement plutôt qu'un rendu
+     * dans l'onglet : un fichier accepté par la validation mais interprétable
+     * par le navigateur (SVG, HTML déguisé) ne s'exécute pas sur le domaine du
+     * lien signé. `$inline` permet l'affichage direct là où c'est voulu
+     * (aperçu d'image, visionneuse PDF).
      */
-    public function temporaryUrl(string $path, int $minutes = 15): string
+    public function temporaryUrl(string $path, int $minutes = 15, bool $inline = false): string
     {
-        return Storage::disk('r2')->temporaryUrl($path, now()->addMinutes($minutes));
+        $nom = basename($path);
+
+        return Storage::disk('r2')->temporaryUrl($path, now()->addMinutes($minutes), [
+            'ResponseContentDisposition' => $inline
+                ? 'inline; filename="'.$nom.'"'
+                : 'attachment; filename="'.$nom.'"',
+        ]);
     }
 
     public function delete(string $path): void

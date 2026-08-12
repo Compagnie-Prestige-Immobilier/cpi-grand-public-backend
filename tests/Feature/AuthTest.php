@@ -150,6 +150,31 @@ class AuthTest extends TestCase
         ])->assertStatus(401);
     }
 
+    public function test_register_rejects_a_password_without_letters_or_digits(): void
+    {
+        // `min:8` seul laissait passer « 12345678 ».
+        $this->postJson('/api/auth/register', [
+            'name' => 'Awa Ndiaye',
+            'email' => 'awa2@example.com',
+            'password' => '1234567890',
+        ])->assertStatus(422)->assertJsonValidationErrors('password');
+
+        $this->postJson('/api/auth/register', [
+            'name' => 'Awa Ndiaye',
+            'email' => 'awa3@example.com',
+            'password' => 'abcdefghij',
+        ])->assertStatus(422)->assertJsonValidationErrors('password');
+    }
+
+    public function test_register_rejects_a_password_shorter_than_ten_characters(): void
+    {
+        $this->postJson('/api/auth/register', [
+            'name' => 'Awa Ndiaye',
+            'email' => 'awa4@example.com',
+            'password' => 'abc12345',
+        ])->assertStatus(422)->assertJsonValidationErrors('password');
+    }
+
     public function test_login_with_unknown_email_returns_401(): void
     {
         $this->postJson('/api/auth/login', [
@@ -158,16 +183,28 @@ class AuthTest extends TestCase
         ])->assertStatus(401);
     }
 
-    public function test_login_password_less_google_account_returns_422(): void
+    public function test_login_does_not_reveal_that_an_account_is_a_google_one(): void
     {
+        // La réponse distinguait « Ce compte utilise Google » (422) de
+        // « Identifiants invalides » (401), ce qui permettait d'énumérer les
+        // comptes : savoir qu'une adresse a un dossier chez CPI est déjà une
+        // information sur une plateforme de financement.
         $user = User::factory()->create(['password' => null]);
         $user->assignRole('client');
 
-        $this->postJson('/api/auth/login', [
+        $reponseGoogle = $this->postJson('/api/auth/login', [
             'email' => $user->email,
             'password' => 'whatever123',
-        ])->assertStatus(422)
-            ->assertJsonPath('message', 'Ce compte utilise Google.');
+        ]);
+
+        $reponseInconnu = $this->postJson('/api/auth/login', [
+            'email' => 'personne@example.com',
+            'password' => 'whatever123',
+        ]);
+
+        $reponseGoogle->assertStatus(401)->assertJsonPath('message', 'Identifiants invalides.');
+        $this->assertSame($reponseInconnu->status(), $reponseGoogle->status());
+        $this->assertSame($reponseInconnu->json('message'), $reponseGoogle->json('message'));
     }
 
     // ─── Me ───────────────────────────────────────────────────
