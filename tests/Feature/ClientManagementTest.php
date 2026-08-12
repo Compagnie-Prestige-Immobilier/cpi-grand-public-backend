@@ -86,9 +86,13 @@ class ClientManagementTest extends TestCase
             ->assertJsonPath('data.requisDocs.2.docId', 'bancaires')
             ->assertJsonPath('data.requisDocs.0.status', 'en-attente');
 
+        // Mettre « en vérification » une pièce que le client n'a jamais déposée
+        // n'a pas de sens : il n'y a rien à examiner. Le cas passait
+        // silencieusement — `Rule::in` validait la valeur sans regarder d'où
+        // l'on venait.
         $this->withToken($this->agentToken())
             ->postJson('/api/staff/clients/'.$client->id.'/docs/identite/verify')
-            ->assertOk();
+            ->assertStatus(409);
     }
 
     public function test_store_creates_client_with_generated_ref(): void

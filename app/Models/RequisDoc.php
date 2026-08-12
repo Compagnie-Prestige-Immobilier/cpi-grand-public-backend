@@ -2,11 +2,18 @@
 
 namespace App\Models;
 
+use App\Enums\RequisDocStatut;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * Le statut est casté en enum : Larastan ne le déduit pas du schéma, qui ne
+ * connaît qu'une colonne `varchar`.
+ *
+ * @property RequisDocStatut $status
+ */
 class RequisDoc extends Model
 {
     use HasUuids, SoftDeletes;
@@ -51,6 +58,7 @@ class RequisDoc extends Model
     protected function casts(): array
     {
         return [
+            'status' => RequisDocStatut::class,
             'date_validation' => 'datetime',
             'version' => 'integer',
         ];

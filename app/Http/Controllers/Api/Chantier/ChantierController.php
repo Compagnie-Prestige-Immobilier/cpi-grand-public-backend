@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\Chantier;
 
 use App\Dto\ChantierData;
+use App\Enums\ChantierStatut;
 use App\Http\Controllers\Controller;
 use App\Models\Chantier;
 use App\Models\ChantierTranche;
 use App\Models\Client;
+use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -146,7 +148,12 @@ class ChantierController extends Controller
             'statut' => ['required', Rule::in(Chantier::STATUTS)],
         ]);
         $ancien = $chantier->statut;
-        $nouveau = $validated['statut'];
+        $nouveau = ChantierStatut::from($validated['statut']);
+
+        // `Rule::in` validait la valeur, jamais la transition : un chantier
+        // livré pouvait redevenir « non démarré », ce que le client voyait
+        // sans explication.
+        TransitionStatut::verifier($ancien, $nouveau, 'Statut du chantier');
 
         $chantier->update(['statut' => $nouveau, 'derniere_maj' => $this->stamp()]);
 
@@ -155,7 +162,7 @@ class ChantierController extends Controller
             ->performedOn($client)
             ->withProperties(['ancien' => $ancien, 'nouveau' => $nouveau])
             ->event('chantier-statut')
-            ->log("{$request->user()?->name} a passé le chantier de {$client->name} au statut « {$nouveau} »");
+            ->log("{$request->user()?->name} a passé le chantier de {$client->name} au statut « {$nouveau->libelle()} »");
 
         return response()->json(['data' => $this->payload($chantier->refresh())]);
     }

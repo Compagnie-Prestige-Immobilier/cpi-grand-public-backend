@@ -2,6 +2,7 @@
 
 namespace App\Dto;
 
+use App\Enums\CpiDocStatut;
 use App\Services\StorageService;
 use Spatie\LaravelData\Attributes\Computed;
 use Spatie\LaravelData\Attributes\Hidden;
@@ -31,7 +32,7 @@ class CpiDocData extends Data
         public readonly string $dateCreation,
         public readonly ?string $datePublication,
         public readonly string $version,
-        public readonly string $status,
+        public readonly CpiDocStatut $status,
         public readonly string $auteur,
         public readonly ?string $fichier,
         // Chemin interne du fichier sur R2. Il ne permet aucun accès à lui

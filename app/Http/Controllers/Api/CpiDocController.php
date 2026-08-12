@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\CpiDocData;
+use App\Enums\CpiDocStatut;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\CpiDoc;
 use App\Services\StorageService;
 use App\Support\BorneListe;
+use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -44,8 +46,10 @@ class CpiDocController extends Controller
     {
         $this->authorize('signAsClient', $doc);
 
+        TransitionStatut::verifier($doc->status, CpiDocStatut::Signe, 'Signature du document');
+
         $doc->update([
-            'status' => 'signe',
+            'status' => CpiDocStatut::Signe,
             'signature_requise' => false,
             'date_publication' => now(),
         ]);
@@ -226,8 +230,14 @@ class CpiDocController extends Controller
     {
         $this->authorize('publish', $cpiDoc);
 
+        TransitionStatut::verifier(
+            $cpiDoc->status,
+            $cpiDoc->signature_requise ? CpiDocStatut::ASigner : CpiDocStatut::Disponible,
+            'Publication du document',
+        );
+
         $cpiDoc->update([
-            'status' => $cpiDoc->signature_requise ? 'a-signer' : 'disponible',
+            'status' => $cpiDoc->signature_requise ? CpiDocStatut::ASigner : CpiDocStatut::Disponible,
             'visible_client' => true,
             'date_publication' => now(),
         ]);
@@ -249,8 +259,10 @@ class CpiDocController extends Controller
     {
         $this->authorize('archive', $cpiDoc);
 
+        TransitionStatut::verifier($cpiDoc->status, CpiDocStatut::Archive, 'Archivage du document');
+
         $cpiDoc->update([
-            'status' => 'archive',
+            'status' => CpiDocStatut::Archive,
             'visible_client' => false,
         ]);
 
@@ -271,8 +283,10 @@ class CpiDocController extends Controller
     {
         $this->authorize('sign', $cpiDoc);
 
+        TransitionStatut::verifier($cpiDoc->status, CpiDocStatut::Signe, 'Signature du document');
+
         $cpiDoc->update([
-            'status' => 'signe',
+            'status' => CpiDocStatut::Signe,
             'signature_requise' => false,
             'date_publication' => now(),
         ]);

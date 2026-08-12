@@ -2,6 +2,7 @@
 
 namespace App\Dto;
 
+use App\Enums\RequisDocStatut;
 use App\Services\StorageService;
 use Spatie\LaravelData\Attributes\Computed;
 use Spatie\LaravelData\Attributes\Hidden;
@@ -27,7 +28,7 @@ class RequisDocData extends Data
         public readonly string $clientId,
         public readonly string $docId,          // identite, revenus, bancaires
         public readonly string $label,
-        public readonly string $status,
+        public readonly RequisDocStatut $status,
         public readonly ?string $commentaire,
         public readonly ?string $dateValidation,
         public readonly ?string $agentName,

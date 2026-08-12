@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\RequisDocData;
+use App\Enums\RequisDocStatut;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Notification;
 use App\Models\RequisDoc;
 use App\Services\StorageService;
+use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -49,8 +51,14 @@ class DocController extends Controller
         $version = $docRow->version + 1;
         $path = $this->storage->uploadDoc($client->id, $docRow->doc_id, $file, $version);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::Depose,
+            'Dépôt de la pièce',
+        );
+
         $docRow->update([
-            'status' => 'depose',
+            'status' => RequisDocStatut::Depose,
             'version' => $version,
             'file_path' => $path,
             'submitted_label' => $file->getClientOriginalName(),
@@ -92,8 +100,14 @@ class DocController extends Controller
         $docRow = $this->findDoc($client, $doc);
         $this->authorize('validate', $docRow);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::Accepte,
+            'Validation de la pièce',
+        );
+
         $docRow->update([
-            'status' => 'accepte',
+            'status' => RequisDocStatut::Accepte,
             'date_validation' => now(),
             'agent_name' => $request->user()?->name,
             'commentaire' => null,
@@ -126,8 +140,14 @@ class DocController extends Controller
 
         $validated = $request->validate(['comment' => 'required|string|max:2000']);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::Refuse,
+            'Refus de la pièce',
+        );
+
         $docRow->update([
-            'status' => 'refuse',
+            'status' => RequisDocStatut::Refuse,
             'commentaire' => $validated['comment'],
             'agent_name' => $request->user()?->name,
             'date_validation' => null,
@@ -160,8 +180,14 @@ class DocController extends Controller
 
         $validated = $request->validate(['comment' => 'required|string|max:2000']);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::ARemplacer,
+            'Demande de remplacement',
+        );
+
         $docRow->update([
-            'status' => 'a-remplacer',
+            'status' => RequisDocStatut::ARemplacer,
             'commentaire' => $validated['comment'],
             'agent_name' => $request->user()?->name,
             'date_validation' => null,
@@ -192,8 +218,14 @@ class DocController extends Controller
         $docRow = $this->findDoc($client, $doc);
         $this->authorize('validate', $docRow);
 
+        TransitionStatut::verifier(
+            $docRow->status,
+            RequisDocStatut::Verification,
+            'Remise en vérification',
+        );
+
         $docRow->update([
-            'status' => 'verification',
+            'status' => RequisDocStatut::Verification,
             'agent_name' => $request->user()?->name,
             'date_validation' => null,
         ]);

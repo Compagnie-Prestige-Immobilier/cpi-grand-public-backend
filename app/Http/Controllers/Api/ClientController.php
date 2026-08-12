@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\ClientData;
+use App\Enums\RequisDocStatut;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\RequisDoc;
@@ -332,7 +333,7 @@ class ClientController extends Controller
         if (! $submitted) {
             return 0;
         }
-        $allValid = $docs->isNotEmpty() && $docs->every(fn (RequisDoc $d) => $d->status === 'accepte');
+        $allValid = $docs->isNotEmpty() && $docs->every(fn (RequisDoc $d) => $d->status === RequisDocStatut::Accepte);
         if (! $allValid) {
             return 1;
         }

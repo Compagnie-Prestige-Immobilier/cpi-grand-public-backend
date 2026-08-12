@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\DemandeData;
+use App\Enums\RequisDocStatut;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Demande;
@@ -246,7 +247,7 @@ class DemandeController extends Controller
         if (! $submitted) {
             return 0;
         }
-        $toutesValides = $pieces->isNotEmpty() && $pieces->every(fn ($p) => $p->status === 'accepte');
+        $toutesValides = $pieces->isNotEmpty() && $pieces->every(fn ($p) => $p->status === RequisDocStatut::Accepte);
 
         return $toutesValides ? min(5, max(2, $etapeCpi)) : 1;
     }

@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Dto\BankAssignmentData;
 use App\Dto\BankData;
+use App\Enums\BankAssignmentStatut;
 use App\Http\Controllers\Controller;
 use App\Models\Bank;
 use App\Models\BankAssignment;
 use App\Models\Client;
+use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -15,6 +17,7 @@ use Illuminate\Validation\Rule;
 class BankController extends Controller
 {
     /** Réponse d'une banque à une orientation de dossier. */
+    /** @var list<string> Valeurs acceptées — l'enum en est la source. */
     private const STATUSES = ['en-attente', 'accord', 'refus'];
 
     // ─── Espace client ────────────────────────────────────────
@@ -151,7 +154,7 @@ class BankController extends Controller
 
         $assignment = BankAssignment::firstOrCreate(
             ['client_id' => $client->id, 'bank_id' => $bank->id],
-            ['status' => 'en-attente'],
+            ['status' => BankAssignmentStatut::EnAttente],
         );
 
         $created = $assignment->wasRecentlyCreated;
@@ -182,7 +185,14 @@ class BankController extends Controller
         ]);
 
         $assignment = $this->findAssignment($client, $bank);
-        $assignment->update(['status' => $validated['status']]);
+        $nouveau = BankAssignmentStatut::from($validated['status']);
+
+        // Un accord ou un refus bancaire est une décision de l'établissement :
+        // il ne se révise pas silencieusement côté CPI. `Rule::in` laissait
+        // repasser un refus en accord sans aucune trace de décision.
+        TransitionStatut::verifier($assignment->status, $nouveau, 'Réponse de la banque');
+
+        $assignment->update(['status' => $nouveau]);
 
         activity()
             ->causedBy($request->user())

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ChantierStatut;
 use App\Support\ConstructionTranches;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -9,6 +10,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * Le statut est casté en enum : Larastan ne le déduit pas du schéma, qui ne
+ * connaît qu'une colonne `varchar`.
+ *
+ * @property ChantierStatut $statut
+ */
 class Chantier extends Model
 {
     use HasUuids, SoftDeletes;
@@ -63,6 +70,7 @@ class Chantier extends Model
     protected function casts(): array
     {
         return [
+            'statut' => ChantierStatut::class,
             'date_debut' => 'date',
             'date_livraison' => 'date',
             'progression' => 'integer',
