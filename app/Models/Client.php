@@ -94,14 +94,13 @@ class Client extends Model
      */
     public function ensureDecaissement(): Decaissement
     {
-        $decaissement = $this->decaissement()->first();
-
-        if ($decaissement instanceof Decaissement) {
-            return $decaissement;
-        }
-
+        // `first()` puis `create()` laissait passer deux insertions concurrentes
+        // sur un dossier fraîchement créé : le dossier se retrouvait avec deux
+        // lignes de décaissement, et `first()` en renvoyait une au hasard.
+        // `firstOrCreate` rattrape la violation d'unicité et relit la ligne
+        // gagnante au lieu de remonter une 500.
         // create() ne remonte pas les défauts SQL (foncier) : refresh() obligatoire.
-        return $this->decaissement()->create([
+        return $this->decaissement()->firstOrCreate([], [
             'tranches' => Decaissement::defaultTranches(),
         ])->refresh();
     }
@@ -116,13 +115,10 @@ class Client extends Model
      */
     public function ensureChantier(): Chantier
     {
-        $chantier = $this->chantier()->first();
-
-        if (! $chantier instanceof Chantier) {
-            // create() ne remonte pas les défauts SQL (progression, statut,
-            // etape_actuelle) : refresh() obligatoire.
-            $chantier = $this->chantier()->create([])->refresh();
-        }
+        // Même course que pour le décaissement (voir ensureDecaissement).
+        // create() ne remonte pas les défauts SQL (progression, statut,
+        // etape_actuelle) : refresh() obligatoire.
+        $chantier = $this->chantier()->firstOrCreate([])->refresh();
 
         foreach (Chantier::defaultTranches() as $tranche) {
             ChantierTranche::firstOrCreate(
