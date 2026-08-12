@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Dto\RequisDocData;
 use App\Enums\RequisDocStatut;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Notification;
@@ -15,9 +16,12 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Number;
 
 class DocController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     public function __construct(private readonly StorageService $storage) {}
 
     // ─── Espace client ────────────────────────────────────────
@@ -70,7 +74,7 @@ class DocController extends Controller
             'file_path' => $path,
             'submitted_label' => $file->getClientOriginalName(),
             'date' => now()->format('d/m/Y'),
-            'taille' => $this->humanSize($file->getSize()),
+            'taille' => Number::fileSize($file->getSize()),
             'commentaire' => null,
             'agent_name' => null,
             'date_validation' => null,
@@ -249,14 +253,6 @@ class DocController extends Controller
 
     // ─── Helpers ──────────────────────────────────────────────
 
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
-
     /**
      * Rattrapage pour les dossiers antérieurs à la création automatique des
      * pièces requises (voir Client::booted).
@@ -310,17 +306,5 @@ class DocController extends Controller
         abort_if($doc === null, 404, 'Document requis introuvable.');
 
         return $doc;
-    }
-
-    private function humanSize(int $bytes): string
-    {
-        if ($bytes >= 1048576) {
-            return number_format($bytes / 1048576, 1, ',', ' ').' Mo';
-        }
-        if ($bytes >= 1024) {
-            return number_format($bytes / 1024, 0, ',', ' ').' Ko';
-        }
-
-        return $bytes.' o';
     }
 }

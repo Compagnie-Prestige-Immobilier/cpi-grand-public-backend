@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\DemandeData;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Demande;
@@ -19,6 +20,8 @@ use Illuminate\Support\Collection;
 
 class DemandeController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     /**
      * GET /client/ma-demande — la demande du client connecté (ou null).
      */
@@ -266,13 +269,5 @@ class DemandeController extends Controller
     private function dateFr(CarbonInterface $date): string
     {
         return $date->locale('fr')->translatedFormat('j F Y');
-    }
-
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
     }
 }

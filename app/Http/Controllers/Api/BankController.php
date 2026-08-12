@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Dto\BankAssignmentData;
 use App\Dto\BankData;
 use App\Enums\BankAssignmentStatut;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Bank;
 use App\Models\BankAssignment;
@@ -16,6 +17,8 @@ use Illuminate\Validation\Rule;
 
 class BankController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     /** Réponse d'une banque à une orientation de dossier. */
     /** @var list<string> Valeurs acceptées — l'enum en est la source. */
     private const STATUSES = ['en-attente', 'accord', 'refus'];
@@ -229,14 +232,6 @@ class BankController extends Controller
     }
 
     // ─── Helpers ──────────────────────────────────────────────
-
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
 
     private function findAssignment(Client $client, Bank $bank): BankAssignment
     {

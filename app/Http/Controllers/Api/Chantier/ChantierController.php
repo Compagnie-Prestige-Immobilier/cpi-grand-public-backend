@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Chantier;
 
 use App\Dto\ChantierData;
 use App\Enums\ChantierStatut;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Chantier;
 use App\Models\ChantierTranche;
@@ -28,6 +29,8 @@ use Illuminate\Validation\Rule;
  */
 class ChantierController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     /**
      * GET /client/mon-chantier — chantier du client connecté.
      *
@@ -191,14 +194,6 @@ class ChantierController extends Controller
     }
 
     // ─── Helpers ──────────────────────────────────────────────
-
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
 
     /**
      * Tranche T{num} du chantier — 404 si le numéro n'existe pas.

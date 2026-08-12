@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Dto\CpiDocData;
 use App\Enums\CpiDocStatut;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\CpiDoc;
@@ -13,11 +14,14 @@ use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Number;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\QueryBuilder;
 
 class CpiDocController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     public function __construct(private readonly StorageService $storage) {}
 
     // ─── Espace client ────────────────────────────────────────
@@ -175,7 +179,7 @@ class CpiDocController extends Controller
         $cpiDoc->update([
             'file_path' => $path,
             'fichier' => $file->getClientOriginalName(),
-            'taille' => $this->humanSize($file->getSize()),
+            'taille' => Number::fileSize($file->getSize()),
             'format' => strtoupper($file->getClientOriginalExtension()),
         ]);
 
@@ -187,18 +191,6 @@ class CpiDocController extends Controller
             ->log("{$request->user()?->name} a joint un fichier au document {$cpiDoc->nom}");
 
         return response()->json(['data' => CpiDocData::from($cpiDoc->refresh())]);
-    }
-
-    private function humanSize(int $bytes): string
-    {
-        if ($bytes >= 1048576) {
-            return number_format($bytes / 1048576, 1, ',', ' ').' Mo';
-        }
-        if ($bytes >= 1024) {
-            return number_format($bytes / 1024, 0, ',', ' ').' Ko';
-        }
-
-        return $bytes.' o';
     }
 
     /**
@@ -303,11 +295,4 @@ class CpiDocController extends Controller
 
     // ─── Helpers ──────────────────────────────────────────────
 
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
 }

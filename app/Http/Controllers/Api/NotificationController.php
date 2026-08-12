@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\NotificationData;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Notification;
@@ -21,6 +22,8 @@ use Illuminate\Http\Request;
  */
 class NotificationController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     // ─── Espace client ────────────────────────────────────────
 
     /**
@@ -134,11 +137,4 @@ class NotificationController extends Controller
 
     // ─── Helpers ──────────────────────────────────────────────
 
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
 }
