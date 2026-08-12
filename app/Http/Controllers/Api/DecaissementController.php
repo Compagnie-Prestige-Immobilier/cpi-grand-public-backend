@@ -6,6 +6,7 @@ use App\Dto\DecaissementData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Decaissement;
+use App\Services\DecaissementGuardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,6 +23,8 @@ use Illuminate\Http\Request;
  */
 class DecaissementController extends Controller
 {
+    public function __construct(private readonly DecaissementGuardService $gardes) {}
+
     /**
      * GET /staff/decaissements/{client} — état de décaissement du dossier.
      * La ligne est créée à la volée si le dossier est antérieur au module.
@@ -60,6 +63,11 @@ class DecaissementController extends Controller
         // Qui a préparé le dossier : moitié du contrôle à quatre yeux, la
         // personne qui valide le versement ne pourra pas être celle-ci.
         $decaissement->update($validated + ['prepared_by' => $request->user()?->getKey()]);
+
+        // Rien ne reliait l'argent engagé au financement accordé : on pouvait
+        // saisir un total supérieur à la demande sans qu'aucun contrôle ne
+        // s'y oppose.
+        $this->gardes->verifierEnveloppe($client, $decaissement->refresh());
 
         activity()
             ->causedBy($request->user())
@@ -104,6 +112,9 @@ class DecaissementController extends Controller
         $this->authorize('declencherVersement', $decaissement);
         $this->refuserAutoValidation($request, $decaissement);
 
+        $this->gardes->verifierMontantTerrain($decaissement);
+        $this->gardes->verifierEnveloppe($client, $decaissement);
+
         $foncier = $this->foncierOf($decaissement);
         $foncier[0] = true;
         if (array_key_exists(1, $foncier)) {
@@ -138,6 +149,7 @@ class DecaissementController extends Controller
 
         $foncier = $this->foncierOf($decaissement);
         $index = $this->indexParam($step, count($foncier), 'Étape foncière inconnue.');
+        $this->gardes->verifierOrdreFoncier($foncier, $index);
 
         $foncier[$index] = true;
         $decaissement->update(['foncier' => $foncier]);
@@ -164,6 +176,7 @@ class DecaissementController extends Controller
 
         $tranches = $this->tranchesOf($decaissement);
         $index = $this->indexParam($num, count($tranches), 'Tranche de construction inconnue.');
+        $this->gardes->verifierOrdreTranche($tranches, $index);
 
         $tranches[$index] = [
             ...$tranches[$index],

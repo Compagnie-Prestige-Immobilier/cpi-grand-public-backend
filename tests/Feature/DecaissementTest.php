@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Client;
 use App\Models\Decaissement;
+use App\Models\Demande;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
@@ -177,11 +178,14 @@ class DecaissementTest extends TestCase
     public function test_validate_foncier_step_sets_only_that_index(): void
     {
         $client = $this->makeClient();
+        // Le parcours foncier est séquentiel : les étapes 2 et 3 doivent être
+        // franchies avant la 4 (l'étape 1 est acquise à la création du dossier).
+        $client->decaissement->update(['foncier' => [true, true, true, false, false]]);
 
         $this->withToken($this->adminToken())
             ->postJson('/api/staff/decaissements/'.$client->id.'/validate-foncier/3')
             ->assertOk()
-            ->assertJsonPath('data.foncier', [true, false, false, true, false]);
+            ->assertJsonPath('data.foncier', [true, true, true, true, false]);
 
         $activity = Activity::query()->where('event', 'foncier-valide')->first();
         $this->assertNotNull($activity);
@@ -202,12 +206,17 @@ class DecaissementTest extends TestCase
     public function test_validate_tranche_marks_it_and_dates_it(): void
     {
         $client = $this->makeClient();
+        // Les tranches se décaissent dans l'ordre : la première doit l'être
+        // avant la deuxième.
+        $client->decaissement->update(['tranches' => [
+            ['validated' => true], ['validated' => false], ['validated' => false], ['validated' => false],
+        ]]);
 
         $response = $this->withToken($this->adminToken())
             ->postJson('/api/staff/decaissements/'.$client->id.'/validate-tranche/1');
 
         $response->assertOk()
-            ->assertJsonPath('data.tranches.0.validated', false)
+            ->assertJsonPath('data.tranches.0.validated', true)
             ->assertJsonPath('data.tranches.1.validated', true);
         $this->assertNotNull($response->json('data.tranches.1.date'));
 
@@ -250,6 +259,9 @@ class DecaissementTest extends TestCase
     public function test_admin_can_also_drive_the_decaissement(): void
     {
         $client = $this->makeClient();
+        // Décaisser un terrain sans montant renseigné n'a pas de sens et
+        // masquerait une saisie oubliée.
+        $client->decaissement->update(['terrain_montant' => 12000000]);
 
         $this->withToken($this->adminToken())->getJson('/api/staff/decaissements/'.$client->id)->assertOk();
         $this->withToken($this->adminToken())
@@ -351,10 +363,78 @@ class DecaissementTest extends TestCase
         // connu : rien ne permet de le reconstituer, et les bloquer figerait
         // les dossiers en cours.
         $client = $this->makeClient();
-        $client->decaissement->update(['prepared_by' => null]);
+        $client->decaissement->update(['terrain_montant' => 12000000, 'prepared_by' => null]);
 
         $this->withToken($this->adminToken())
             ->postJson('/api/staff/decaissements/'.$client->id.'/validate-terrain')
             ->assertOk();
+    }
+
+    // ─── Garde-fous arithmétiques et d'ordre ──────────────────
+
+    public function test_the_committed_total_cannot_exceed_the_granted_amount(): void
+    {
+        // Rien ne reliait l'argent versé au financement accordé : on pouvait
+        // engager plus que le montant de la demande sans aucun contrôle.
+        $client = $this->makeClient();
+        Demande::create(['client_id' => $client->id, 'montant' => 20000000]);
+
+        $this->withToken($this->agentToken())->putJson('/api/staff/decaissements/'.$client->id, [
+            'terrain_montant' => 12000000,
+            'construction_montant' => 15000000,
+        ])->assertStatus(409);
+    }
+
+    public function test_a_total_within_the_granted_amount_is_accepted(): void
+    {
+        $client = $this->makeClient();
+        Demande::create(['client_id' => $client->id, 'montant' => 30000000]);
+
+        $this->withToken($this->agentToken())->putJson('/api/staff/decaissements/'.$client->id, [
+            'terrain_montant' => 12000000,
+            'construction_montant' => 15000000,
+        ])->assertOk();
+    }
+
+    public function test_a_dossier_without_a_granted_amount_is_not_blocked(): void
+    {
+        // Le dossier n'est pas encore instruit : bloquer figerait les dossiers
+        // en cours.
+        $client = $this->makeClient();
+
+        $this->withToken($this->agentToken())->putJson('/api/staff/decaissements/'.$client->id, [
+            'terrain_montant' => 99000000,
+        ])->assertOk();
+    }
+
+    public function test_tranches_must_be_disbursed_in_order(): void
+    {
+        $client = $this->makeClient();
+
+        $this->withToken($this->adminToken())
+            ->postJson('/api/staff/decaissements/'.$client->id.'/validate-tranche/2')
+            ->assertStatus(409);
+
+        $this->assertFalse($client->decaissement->refresh()->tranches[2]['validated']);
+    }
+
+    public function test_foncier_steps_must_be_validated_in_order(): void
+    {
+        $client = $this->makeClient();
+
+        $this->withToken($this->adminToken())
+            ->postJson('/api/staff/decaissements/'.$client->id.'/validate-foncier/4')
+            ->assertStatus(409);
+    }
+
+    public function test_the_land_cannot_be_disbursed_without_an_amount(): void
+    {
+        $client = $this->makeClient();
+
+        $this->withToken($this->adminToken())
+            ->postJson('/api/staff/decaissements/'.$client->id.'/validate-terrain')
+            ->assertStatus(409);
+
+        $this->assertFalse($client->decaissement->refresh()->terrain_decaisse);
     }
 }
