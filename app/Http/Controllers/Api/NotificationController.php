@@ -6,6 +6,7 @@ use App\Dto\NotificationData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Notification;
+use App\Support\BorneListe;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -39,6 +40,8 @@ class NotificationController extends Controller
             })
             ->orderByDesc('date')
             ->orderByDesc('created_at')
+            // Borne anti-déni de service : voir App\Support\BorneListe.
+            ->limit(BorneListe::MAX_NOTIFICATIONS)
             ->get();
 
         return response()->json(['data' => NotificationData::collect($notifications)]);

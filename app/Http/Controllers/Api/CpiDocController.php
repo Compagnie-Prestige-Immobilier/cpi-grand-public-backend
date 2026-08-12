@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\CpiDoc;
 use App\Services\StorageService;
+use App\Support\BorneListe;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -29,6 +30,8 @@ class CpiDocController extends Controller
         $docs = $client->cpiDocs()
             ->where('visible_client', true)
             ->orderByDesc('created_at')
+            // Borne anti-déni de service : voir App\Support\BorneListe.
+            ->limit(BorneListe::MAX)
             ->get();
 
         return response()->json(['data' => CpiDocData::collect($docs)]);

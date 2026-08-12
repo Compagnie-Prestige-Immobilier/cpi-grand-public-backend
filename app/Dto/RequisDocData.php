@@ -4,9 +4,11 @@ namespace App\Dto;
 
 use App\Services\StorageService;
 use Spatie\LaravelData\Attributes\Computed;
+use Spatie\LaravelData\Attributes\Hidden;
 use Spatie\LaravelData\Attributes\MapInputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+use Spatie\TypeScriptTransformer\Attributes\Hidden as TypeScriptHidden;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
 #[TypeScript]
@@ -33,6 +35,13 @@ class RequisDocData extends Data
         public readonly ?string $submittedLabel,
         public readonly ?string $date,
         public readonly ?string $taille,
+        // Chemin interne du fichier sur R2. Il ne permet aucun accès à lui
+        // seul — le bucket est privé, tout passe par `fileUrl` signée — mais il
+        // révèle l'arborescence de stockage et les identifiants internes à
+        // quiconque lit la réponse JSON. Les DEUX attributs sont nécessaires :
+        // `Data\Hidden` retire la clé de la réponse, `TypeScript\Hidden` la
+        // retire du type généré.
+        #[Hidden, TypeScriptHidden]
         public readonly ?string $filePath,
     ) {
         $this->fileUrl = $filePath === null
