@@ -45,6 +45,10 @@ détecte une erreur dans `bootstrap/app.php` qu'aucun test ne cible.
   suppressions sont douces : toute recréation d'une ligne `hasOne` doit passer
   par `withTrashed()` et restaurer, sinon elle échoue sur une violation
   d'unicité.
+- **Composer résout contre PHP 8.3.33**, fixé par `config.platform.php`, parce
+  que c'est la version de l'image de production et de l'intégration continue.
+  Sans ce réglage, un `composer require` lancé depuis un poste en PHP 8.5
+  accepte un paquet qui exige 8.4 et casse le build — c'est arrivé.
 - **Les types TypeScript du frontend sont générés depuis les DTO** et écrits
   dans le dépôt voisin (`config/typescript.php`). Après tout changement de DTO :
   `php artisan typescript:transform`, puis committer **des deux côtés**.
