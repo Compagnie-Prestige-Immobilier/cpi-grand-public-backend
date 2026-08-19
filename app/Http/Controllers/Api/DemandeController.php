@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\DemandeData;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Demande;
 use App\Models\Notification;
 use App\Models\RequisDoc;
+use App\Support\ParcoursDossier;
+use App\Support\VerrouDossier;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +20,8 @@ use Illuminate\Support\Collection;
 
 class DemandeController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     /**
      * GET /client/ma-demande — la demande du client connecté (ou null).
      */
@@ -45,7 +50,7 @@ class DemandeController extends Controller
         // Le verrou est ICI, côté serveur, et pas seulement dans l'interface :
         // masquer le bouton laisserait l'API grande ouverte.
         abort_if(
-            $client->dossier_etape >= self::ETAPE_VERROUILLAGE,
+            VerrouDossier::estVerrouille($client),
             409,
             "Votre dossier est en cours d'étude par CPI : les informations ne sont plus modifiables. Contactez votre conseiller pour toute correction.",
         );
@@ -77,6 +82,9 @@ class DemandeController extends Controller
         abort_if($demande === null, 404, 'Aucune demande à soumettre.');
 
         $this->authorize('update', $demande);
+        // Soumettre après le début de l'analyse remettrait le dossier dans un
+        // état que l'agent croit figé.
+        VerrouDossier::refuserSiVerrouille($client, 'Soumission impossible');
 
         $demande->update([
             'submitted' => true,
@@ -121,11 +129,18 @@ class DemandeController extends Controller
         $demande = $client->demande;
         abort_if($demande === null, 404, "Ce dossier n'a pas encore de demande à corriger.");
 
+        // Le middleware `staff` garantit le rôle, pas la permission : sans ceci,
+        // un agent sans `edit-client` écrivait dans la demande d'un dossier
+        // verrouillé alors que toutes les autres mutations staff du domaine
+        // passent par une policy. C'était le seul trou d'autorisation de l'API.
+        $this->authorize('updateAsStaff', $demande);
+
         // Valeurs d'avant, limitées aux champs réellement touchés : le journal
         // doit dire ce qui a changé, pas répéter toute la demande.
-        $avant = collect($validated)
-            ->map(fn ($_, string $champ) => $demande->getAttribute($champ))
-            ->all();
+        $avant = [];
+        foreach (array_keys($validated) as $champ) {
+            $avant[$champ] = $demande->getAttribute($champ);
+        }
 
         $demande->update($validated);
 
@@ -169,7 +184,7 @@ class DemandeController extends Controller
         $pieces = $client->requisDocs;
 
         $nbValidees = $pieces->where('status', 'accepte')->count();
-        $etape = $this->etapeParcours((bool) $demande?->submitted, $pieces, $client->dossier_etape);
+        $etape = ParcoursDossier::etape((bool) $demande?->submitted, $pieces, $client->dossier_etape);
 
         $pdf = Pdf::loadView('pdf.recapitulatif', [
             'client' => $client,
@@ -202,7 +217,8 @@ class DemandeController extends Controller
      * seulement *reçu* (il peut corriger une faute de frappe lui-même), et le
      * dossier se fige dès que CPI commence réellement à l'instruire.
      */
-    public const ETAPE_VERROUILLAGE = 3;
+    /** @deprecated Utiliser VerrouDossier::ETAPE — conservée le temps que les tests migrent. */
+    public const ETAPE_VERROUILLAGE = VerrouDossier::ETAPE;
 
     /** Libellés du parcours — miroir de TIMELINE_STEPS côté frontend. */
     private const ETAPES = [
@@ -235,15 +251,6 @@ class DemandeController extends Controller
      *
      * @param  Collection<int, RequisDoc>  $pieces
      */
-    private function etapeParcours(bool $submitted, Collection $pieces, int $etapeCpi): int
-    {
-        if (! $submitted) {
-            return 0;
-        }
-        $toutesValides = $pieces->isNotEmpty() && $pieces->every(fn ($p) => $p->status === 'accepte');
-
-        return $toutesValides ? min(5, max(2, $etapeCpi)) : 1;
-    }
 
     /** 25000000 → « 25 000 000 FCFA » (espace insécable fine, comme à l'écran). */
     private function fcfa(float $montant): string
@@ -262,13 +269,5 @@ class DemandeController extends Controller
     private function dateFr(CarbonInterface $date): string
     {
         return $date->locale('fr')->translatedFormat('j F Y');
-    }
-
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
     }
 }

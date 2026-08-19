@@ -18,9 +18,12 @@ class TypeScriptTransformerServiceProvider extends BaseTypeScriptTransformerServ
             ->transformer(AttributedClassTransformer::class)
             ->transformer(EnumTransformer::class)
             ->transformDirectories(app_path())
-            // Types générés côté frontend — l'équivalent v3 de `output_file`
-            // (../frontend/src/app/api/types/generated.d.ts)
-            ->outputDirectory(base_path('../frontend/src/app/api/types'))
+            // Types générés côté frontend - l'équivalent v3 de `output_file`.
+            // Le chemin vit dans config/typescript.php : il pointait vers
+            // `../frontend`, alors que le dépôt voisin s'appelle
+            // `cpi-grand-public-frontend`. Toute régénération écrivait donc
+            // dans un dossier fantôme.
+            ->outputDirectory(config('typescript.output_directory'))
             ->writer(new GlobalNamespaceWriter('generated.d.ts'));
     }
 }

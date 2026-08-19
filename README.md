@@ -81,10 +81,10 @@ Chaque mutation écrit son entrée via Spatie Activity Log (`causedBy`, `perform
 ## Développement
 
 ```bash
-php artisan test                  # 246 tests
+php artisan test                  # 345 tests
 vendor/bin/phpstan analyse        # niveau 5
 vendor/bin/pint                   # formatage (--test pour vérifier seulement)
-php artisan route:list --path=api # 84 routes /api
+php artisan route:list --path=api # routes /api
 ```
 
 ### Régénérer les types du frontend

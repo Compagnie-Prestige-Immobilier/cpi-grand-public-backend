@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Client;
 use App\Models\User;
+use App\Support\PortefeuilleConseiller;
 
 class ClientPolicy
 {
@@ -14,9 +15,12 @@ class ClientPolicy
 
     public function view(User $user, Client $client): bool
     {
-        // Staff can view any client; clients can only view themselves
+        // Le personnel voit les dossiers de son portefeuille ; un client, le
+        // sien uniquement. Avant, tout agent voyait TOUS les dossiers : la
+        // colonne `conseiller_id` existait sans qu'aucune policy ne la lise.
         if ($user->hasAnyRole(['agent-cpi', 'super-admin'])) {
-            return $user->hasPermissionTo('view-clients');
+            return $user->hasPermissionTo('view-clients')
+                && PortefeuilleConseiller::contient($user, $client);
         }
 
         return $user->id === $client->user_id;
@@ -31,7 +35,8 @@ class ClientPolicy
     public function update(User $user, Client $client): bool
     {
         if ($user->hasAnyRole(['agent-cpi', 'super-admin'])) {
-            return $user->hasPermissionTo('edit-client');
+            return $user->hasPermissionTo('edit-client')
+                && PortefeuilleConseiller::contient($user, $client);
         }
 
         return $user->id === $client->user_id;

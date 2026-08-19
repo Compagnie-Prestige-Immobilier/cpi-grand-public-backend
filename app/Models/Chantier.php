@@ -2,14 +2,23 @@
 
 namespace App\Models;
 
+use App\Enums\ChantierStatut;
+use App\Support\ConstructionTranches;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * Le statut est casté en enum : Larastan ne le déduit pas du schéma, qui ne
+ * connaît qu'une colonne `varchar`.
+ *
+ * @property ChantierStatut $statut
+ */
 class Chantier extends Model
 {
-    use HasUuids;
+    use HasUuids, SoftDeletes;
 
     /** États possibles du chantier — le défaut en base est « non-demarre ». */
     public const STATUTS = ['non-demarre', 'en-cours', 'suspendu', 'en-retard', 'termine', 'livre'];
@@ -26,16 +35,11 @@ class Chantier extends Model
      */
     public static function defaultTranches(): array
     {
-        return [
-            ['num' => 1, 'label' => 'Avance de démarrage', 'pct' => 35,
-                'description' => 'À la signature et au démarrage du chantier — mobilisation des équipes.'],
-            ['num' => 2, 'label' => 'Élévation des murs, poteaux, dalle et toiture', 'pct' => 30,
-                'description' => "Libéré après certification de la mise hors d'eau."],
-            ['num' => 3, 'label' => 'Second œuvre', 'pct' => 30,
-                'description' => 'Menuiseries, plomberie, électricité et carrelage.'],
-            ['num' => 4, 'label' => 'Remise des clés', 'pct' => 5,
-                'description' => 'À la réception définitive du logement.'],
-        ];
+        // Le découpage lui-même vit dans ConstructionTranches : le décaissement
+        // bancaire porte les mêmes 4 tranches et doit dériver de la même source,
+        // sinon les libellés et les pourcentages peuvent diverger sans que rien
+        // ne le signale.
+        return ConstructionTranches::definitions();
     }
 
     /**
@@ -66,6 +70,7 @@ class Chantier extends Model
     protected function casts(): array
     {
         return [
+            'statut' => ChantierStatut::class,
             'date_debut' => 'date',
             'date_livraison' => 'date',
             'progression' => 'integer',

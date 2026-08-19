@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\User;
+use App\Support\ParcoursDossier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,18 +40,9 @@ class StatsController extends Controller
      * ni `greatest` : la base de développement est PostgreSQL, les tests
      * tournent sur SQLite, et `least`/`greatest` n'existent pas sur la seconde.
      */
-    private const ETAPE_SQL = <<<'SQL'
-        case
-            when d.submitted is null or d.submitted = false then 0
-            when coalesce(r.total, 0) = 0 or coalesce(r.acceptes, 0) < r.total then 1
-            when c.dossier_etape < 2 then 2
-            when c.dossier_etape > 5 then 5
-            else c.dossier_etape
-        end
-        SQL;
 
     /** Dernière étape du parcours — « Signature », dossier finalisé. */
-    private const ETAPE_SIGNATURE = 5;
+    private const ETAPE_SIGNATURE = ParcoursDossier::SIGNATURE;
 
     /**
      * GET /staff/stats/dashboard — le tableau de bord du rôle appelant.
@@ -243,9 +235,9 @@ class StatsController extends Controller
                 '=',
                 'c.id',
             )
-            ->selectRaw(self::ETAPE_SQL.' as etape')
+            ->selectRaw(ParcoursDossier::sql().' as etape')
             ->selectRaw('count(*) as total')
-            ->groupByRaw(self::ETAPE_SQL)
+            ->groupByRaw(ParcoursDossier::sql())
             ->pluck('total', 'etape');
 
         foreach ($rows as $etape => $total) {

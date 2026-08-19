@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Mail\SupportMessage;
 use App\Models\Client;
@@ -23,6 +24,8 @@ use Illuminate\Support\Facades\Mail;
  */
 class SupportController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
     /**
      * POST /client/support — transmet la demande d'un client au support CPI.
      */
@@ -62,13 +65,5 @@ class SupportController extends Controller
         return response()->json(['data' => [
             'message' => 'Votre demande a bien été transmise au support CPI.',
         ]]);
-    }
-
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
     }
 }

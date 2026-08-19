@@ -18,6 +18,7 @@ use App\Models\RequisDoc;
 use App\Models\User;
 use App\Services\DemoDataService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
@@ -36,7 +37,7 @@ class DemoDataTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function adminToken(): string
     {
@@ -65,6 +66,7 @@ class DemoDataTest extends TestCase
         return Client::query()->where('ref', 'like', DemoDataService::PREFIX.'%')->count();
     }
 
+    /** @return TestResponse<JsonResponse> */
     private function chargerDemo(): TestResponse
     {
         return $this->withToken($this->adminToken())->postJson('/api/staff/demo/seed');

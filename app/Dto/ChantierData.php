@@ -2,6 +2,7 @@
 
 namespace App\Dto;
 
+use App\Enums\ChantierStatut;
 use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Attributes\MapInputName;
 use Spatie\LaravelData\Data;
@@ -38,7 +39,7 @@ class ChantierData extends Data
         public readonly ?string $dateLivraison,
         public readonly int $progression,
         public readonly string $etapeActuelle,
-        public readonly string $statut,
+        public readonly ChantierStatut $statut,
         public readonly ?string $derniereMaj,
         #[DataCollectionOf(ChantierTrancheData::class)]
         public readonly ?array $tranches = null,

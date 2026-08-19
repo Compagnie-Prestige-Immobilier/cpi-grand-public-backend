@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ChantierMedia;
 use App\Models\Client;
 use App\Services\StorageService;
+use App\Support\BorneListe;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -37,7 +38,7 @@ class ChantierMediaController extends Controller
         $chantier = $client->ensureChantier();
 
         return response()->json([
-            'data' => ChantierMediaData::collect($chantier->medias()->get()),
+            'data' => ChantierMediaData::collect($chantier->medias()->limit(BorneListe::MAX)->get()),
         ]);
     }
 

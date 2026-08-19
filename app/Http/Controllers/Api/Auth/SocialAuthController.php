@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\GoogleProvider;
 
@@ -54,24 +55,31 @@ class SocialAuthController extends Controller
         // Find or create user
         $user = User::query()->where('email', $googleUser->getEmail())->first();
         if (! $user) {
-            $user = User::create([
-                'name' => $googleUser->getName(),
-                'email' => $googleUser->getEmail(),
-                // no password — the column is nullable for OAuth users (STEP 8.1)
-                'google_id' => $googleUser->getId(),
-                'avatar' => $googleUser->getAvatar(),
-                'needs_onboarding' => true,   // must complete profile
-            ]);
-            $user->assignRole('client');
+            // Même raison qu'à l'inscription classique : la création touche
+            // huit tables, et un échec à mi-parcours laissait un compte sans
+            // dossier — connectable, mais sans rien à afficher.
+            $user = DB::transaction(function () use ($googleUser): User {
+                $user = User::create([
+                    'name' => $googleUser->getName(),
+                    'email' => $googleUser->getEmail(),
+                    // no password — the column is nullable for OAuth users (STEP 8.1)
+                    'google_id' => $googleUser->getId(),
+                    'avatar' => $googleUser->getAvatar(),
+                    'needs_onboarding' => true,   // must complete profile
+                ]);
+                $user->assignRole('client');
 
-            // Create associated Client record (minimal — will be completed via onboarding)
-            Client::create([
-                'user_id' => $user->id,
-                'name' => $user->name,
-                'ref' => Client::generateRef(),
-                'email' => $user->email,
-                'date_inscription' => now(),
-            ]);
+                // Create associated Client record (minimal — will be completed via onboarding)
+                Client::create([
+                    'user_id' => $user->id,
+                    'name' => $user->name,
+                    'ref' => Client::generateRef(),
+                    'email' => $user->email,
+                    'date_inscription' => now(),
+                ]);
+
+                return $user;
+            });
         }
 
         $token = $user->createToken('client-token')->plainTextToken;

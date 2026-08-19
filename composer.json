@@ -8,12 +8,14 @@
     "require": {
         "php": "^8.3",
         "barryvdh/laravel-dompdf": "^3.1",
+        "brick/money": "^0.14.1",
         "dedoc/scramble": "^0.13.36",
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.0",
         "laravel/socialite": "^5.29",
         "laravel/tinker": "^3.0",
         "league/flysystem-aws-s3-v3": "^3.35",
+        "propaganistas/laravel-phone": "^6.0",
         "spatie/laravel-activitylog": "^4.12",
         "spatie/laravel-data": "^4.23",
         "spatie/laravel-permission": "^8.3",
@@ -23,6 +25,7 @@
     "require-dev": {
         "fakerphp/faker": "^1.23",
         "larastan/larastan": "^3.10",
+        "laravel-lang/common": "^6.8",
         "laravel/pail": "^1.2.5",
         "laravel/pao": "^1.0.6",
         "laravel/pint": "^1.27",
@@ -59,6 +62,17 @@
             "@php artisan config:clear --ansi @no_additional_args",
             "@php artisan test"
         ],
+        "analyse": [
+            "@php -d memory_limit=1G vendor/bin/phpstan analyse --no-progress"
+        ],
+        "lint": [
+            "@php vendor/bin/pint --test"
+        ],
+        "check": [
+            "@composer lint",
+            "@composer analyse",
+            "@php artisan test"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
@@ -90,6 +104,9 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
+        },
+        "platform": {
+            "php": "8.3.33"
         }
     },
     "minimum-stability": "stable",

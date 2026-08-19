@@ -19,4 +19,24 @@ abstract class TestCase extends BaseTestCase
             fn (string $path, DateTimeInterface $expiration): string => "https://r2.test/{$path}?expires={$expiration->getTimestamp()}",
         );
     }
+
+    /**
+     * Le garde d'authentification mémorise l'utilisateur qu'il a résolu, et
+     * l'application de test survit d'une requête à l'autre au sein d'un même
+     * test. Sans cette purge, un second appel fait avec le jeton de quelqu'un
+     * d'autre reste vu comme le PREMIER utilisateur : la requête part avec le
+     * bon en-tête Authorization, mais les permissions évaluées sont celles du
+     * précédent.
+     *
+     * Symptôme observé : un test qui fait préparer un décaissement par un agent
+     * puis valider par un administrateur recevait 403, la policy voyant encore
+     * l'agent. En production le problème n'existe pas — chaque requête HTTP
+     * part d'une application neuve.
+     */
+    public function withToken(string $token, string $type = 'Bearer'): static
+    {
+        $this->app['auth']->forgetGuards();
+
+        return parent::withToken($token, $type);
+    }
 }

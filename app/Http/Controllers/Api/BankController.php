@@ -4,17 +4,26 @@ namespace App\Http\Controllers\Api;
 
 use App\Dto\BankAssignmentData;
 use App\Dto\BankData;
+use App\Enums\BankAssignmentStatut;
+use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Bank;
 use App\Models\BankAssignment;
 use App\Models\Client;
+use App\Services\NotifieLeClient;
+use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class BankController extends Controller
 {
+    use ResoudLeDossierDuClient;
+
+    public function __construct(private readonly NotifieLeClient $notifie) {}
+
     /** Réponse d'une banque à une orientation de dossier. */
+    /** @var list<string> Valeurs acceptées — l'enum en est la source. */
     private const STATUSES = ['en-attente', 'accord', 'refus'];
 
     // ─── Espace client ────────────────────────────────────────
@@ -76,7 +85,7 @@ class BankController extends Controller
         ]);
 
         // create() ne remonte pas les défauts SQL (color) : refresh() obligatoire.
-        $bank = Bank::create(collect($validated)->filter(fn ($v) => $v !== null)->all())->refresh();
+        $bank = Bank::create(array_filter($validated, fn ($v) => $v !== null))->refresh();
 
         activity()
             ->causedBy($request->user())
@@ -151,7 +160,7 @@ class BankController extends Controller
 
         $assignment = BankAssignment::firstOrCreate(
             ['client_id' => $client->id, 'bank_id' => $bank->id],
-            ['status' => 'en-attente'],
+            ['status' => BankAssignmentStatut::EnAttente],
         );
 
         $created = $assignment->wasRecentlyCreated;
@@ -182,7 +191,14 @@ class BankController extends Controller
         ]);
 
         $assignment = $this->findAssignment($client, $bank);
-        $assignment->update(['status' => $validated['status']]);
+        $nouveau = BankAssignmentStatut::from($validated['status']);
+
+        // Un accord ou un refus bancaire est une décision de l'établissement :
+        // il ne se révise pas silencieusement côté CPI. `Rule::in` laissait
+        // repasser un refus en accord sans aucune trace de décision.
+        TransitionStatut::verifier($assignment->status, $nouveau, 'Réponse de la banque');
+
+        $assignment->update(['status' => $nouveau]);
 
         activity()
             ->causedBy($request->user())
@@ -194,6 +210,14 @@ class BankController extends Controller
             ])
             ->event('banque-statut')
             ->log("{$request->user()?->name} a enregistré la réponse « {$validated['status']} » de {$bank->name} pour {$client->name}");
+
+        if ($nouveau !== BankAssignmentStatut::EnAttente) {
+            $this->notifie->reponseBancaire(
+                $client,
+                $bank->name,
+                $nouveau === BankAssignmentStatut::Accord,
+            );
+        }
 
         return response()->json(['data' => BankAssignmentData::from($assignment->refresh()->load('bank'))]);
     }
@@ -219,14 +243,6 @@ class BankController extends Controller
     }
 
     // ─── Helpers ──────────────────────────────────────────────
-
-    private function currentClient(Request $request): Client
-    {
-        $client = $request->user()?->client;
-        abort_if($client === null, 404, 'Aucun dossier client associé à ce compte.');
-
-        return $client;
-    }
 
     private function findAssignment(Client $client, Bank $bank): BankAssignment
     {

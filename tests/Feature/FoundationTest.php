@@ -21,7 +21,7 @@ class FoundationTest extends TestCase
     /**
      * Run the DatabaseSeeder before each test.
      */
-    protected $seed = true;
+    protected bool $seed = true;
 
     public function test_migrate_and_seed_run_green_on_sqlite(): void
     {

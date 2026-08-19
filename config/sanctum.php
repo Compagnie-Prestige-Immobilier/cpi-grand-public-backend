@@ -50,7 +50,15 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Les jetons n'expiraient jamais : un jeton volé restait valable
+    // indéfiniment, y compris après un changement de mot de passe. 7 jours par
+    // défaut, ajustable sans redéploiement de code.
+    'expiration' => (int) env('SANCTUM_EXPIRATION_MINUTES', 60 * 24 * 7),
+
+    // Les jetons de prise en main donnent accès au dossier complet d'un client
+    // (pièces d'identité, montants). Leur durée de vie est volontairement bien
+    // plus courte : une session d'assistance, pas une semaine.
+    'impersonation_expiration' => (int) env('SANCTUM_IMPERSONATION_MINUTES', 60),
 
     /*
     |--------------------------------------------------------------------------

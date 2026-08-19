@@ -16,7 +16,7 @@ class ClientManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $seed = true;
+    protected bool $seed = true;
 
     private function agentToken(): string
     {
@@ -34,6 +34,7 @@ class ClientManagementTest extends TestCase
         return $admin->createToken('t')->plainTextToken;
     }
 
+    /** @param  array<string, mixed>  $overrides */
     private function makeClient(array $overrides = []): Client
     {
         return Client::create([
@@ -86,9 +87,13 @@ class ClientManagementTest extends TestCase
             ->assertJsonPath('data.requisDocs.2.docId', 'bancaires')
             ->assertJsonPath('data.requisDocs.0.status', 'en-attente');
 
+        // Mettre « en vérification » une pièce que le client n'a jamais déposée
+        // n'a pas de sens : il n'y a rien à examiner. Le cas passait
+        // silencieusement — `Rule::in` validait la valeur sans regarder d'où
+        // l'on venait.
         $this->withToken($this->agentToken())
             ->postJson('/api/staff/clients/'.$client->id.'/docs/identite/verify')
-            ->assertOk();
+            ->assertStatus(409);
     }
 
     public function test_store_creates_client_with_generated_ref(): void
@@ -146,7 +151,10 @@ class ClientManagementTest extends TestCase
         $this->withToken($this->adminToken())->deleteJson('/api/staff/clients/'.$client->id)
             ->assertOk();
 
-        $this->assertDatabaseMissing('clients', ['id' => $client->id]);
+        // Suppression douce : le dossier de financement d'un particulier
+        // (pièces d'identité, montants, historique) ne doit plus pouvoir
+        // disparaître définitivement sur un clic.
+        $this->assertSoftDeleted('clients', ['id' => $client->id]);
     }
 
     public function test_summary_returns_lightweight_shape(): void
@@ -218,5 +226,85 @@ class ClientManagementTest extends TestCase
         $this->getJson('/api/staff/clients')->assertStatus(401);
         $this->getJson('/api/staff/clients/'.$client->id)->assertStatus(401);
         $this->postJson('/api/staff/clients', [])->assertStatus(401);
+    }
+
+    // ─── Cloisonnement par conseiller ─────────────────────────
+
+    public function test_an_agent_cannot_open_a_dossier_assigned_to_another_adviser(): void
+    {
+        // `clients.conseiller_id` existait depuis l'origine sans qu'aucune
+        // policy ne le lise : tout agent voyait et modifiait TOUS les dossiers
+        // — pièces d'identité, revenus, montants, documents contractuels.
+        $autreConseiller = User::factory()->create();
+        $autreConseiller->assignRole('agent-cpi');
+
+        $client = Client::create([
+            'name' => 'Dossier d\'un collègue',
+            'ref' => Client::generateRef(),
+            'conseiller_id' => $autreConseiller->id,
+        ]);
+
+        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->getJson("/api/staff/clients/{$client->id}")
+            ->assertForbidden();
+
+        $this->withToken($agent->createToken('t2')->plainTextToken)
+            ->putJson("/api/staff/clients/{$client->id}", ['name' => 'Renommé'])
+            ->assertForbidden();
+    }
+
+    public function test_an_unassigned_dossier_stays_open_to_any_agent(): void
+    {
+        // Sinon les nouvelles demandes tomberaient dans un angle mort le temps
+        // qu'un administrateur les attribue.
+        $client = Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
+        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
+
+        $this->withToken($agent->createToken('t')->plainTextToken)
+            ->getJson("/api/staff/clients/{$client->id}")
+            ->assertOk();
+    }
+
+    public function test_a_super_admin_sees_every_dossier(): void
+    {
+        $autreConseiller = User::factory()->create();
+        $autreConseiller->assignRole('agent-cpi');
+        $client = Client::create([
+            'name' => 'Dossier attribué',
+            'ref' => Client::generateRef(),
+            'conseiller_id' => $autreConseiller->id,
+        ]);
+
+        $admin = User::query()->where('email', 'admin@cpi.sn')->firstOrFail();
+
+        $this->withToken($admin->createToken('t')->plainTextToken)
+            ->getJson("/api/staff/clients/{$client->id}")
+            ->assertOk();
+    }
+
+    public function test_the_staff_listing_is_filtered_to_the_advisers_portfolio(): void
+    {
+        // La policy cloisonne dossier par dossier ; la liste doit l'être à la
+        // source, sinon un agent lirait les noms, références et montants de
+        // tout le portefeuille CPI avant même de cliquer.
+        $autreConseiller = User::factory()->create();
+        $autreConseiller->assignRole('agent-cpi');
+
+        Client::create(['name' => 'Le mien', 'ref' => Client::generateRef()]);
+        Client::create([
+            'name' => 'Celui du collègue',
+            'ref' => Client::generateRef(),
+            'conseiller_id' => $autreConseiller->id,
+        ]);
+
+        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
+
+        $noms = array_column((array) $this->withToken($agent->createToken('t')->plainTextToken)
+            ->getJson('/api/staff/clients')->json('data'), 'name');
+
+        $this->assertContains('Le mien', $noms);
+        $this->assertNotContains('Celui du collègue', $noms);
     }
 }

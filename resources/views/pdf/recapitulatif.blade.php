@@ -120,8 +120,8 @@
         @forelse ($pieces as $piece)
             <tr>
                 <td>{{ $piece->label }}</td>
-                <td class="etat {{ $etatClasses[$piece->status] ?? 'etat-neutre' }}">
-                    {{ $etatLibelles[$piece->status] ?? $piece->status }}
+                <td class="etat {{ $etatClasses[$piece->status->value] ?? 'etat-neutre' }}">
+                    {{ $piece->status->libelle() }}
                 </td>
                 <td>{{ $piece->date ?: '—' }}</td>
             </tr>
