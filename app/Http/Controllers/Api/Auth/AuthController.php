@@ -149,6 +149,52 @@ class AuthController extends Controller
     }
 
     /**
+     * PUT /auth/mon-compte — corrige les informations déclarées puis
+     * resoumet un compte refusé.
+     *
+     * Le refus donne un motif ; la personne corrige et repasse en file. Sans
+     * cette route, un refus serait définitif dans les faits — il n'existerait
+     * aucun moyen de revenir dessus autrement qu'en rouvrant un ticket support.
+     */
+    public function updateMonCompte(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        // Précondition explicite, et non un appel à TransitionStatut : ce
+        // dernier traite « déjà dans cet état » comme un no-op réussi (rejouer
+        // une action n'est pas une faute), ce qui aurait laissé un compte déjà
+        // EN ATTENTE resoumettre sans rien y gagner. Seul un compte REFUSÉ a
+        // quelque chose à corriger.
+        abort_unless(
+            $user->statut_compte === StatutCompte::Rejete,
+            409,
+            'Seul un compte refusé peut être corrigé et resoumis.',
+        );
+
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'phone' => 'sometimes|nullable|string|max:50',
+            'employer' => 'sometimes|nullable|string|max:255',
+            'profile_type' => 'sometimes|nullable|in:fonctionnaire,prive,autre',
+            'revenus' => 'sometimes|nullable|string|max:50',
+        ]);
+
+        $user->update([
+            ...$validated,
+            'statut_compte' => StatutCompte::EnAttenteValidation,
+            'motif_rejet' => null,
+        ]);
+
+        activity()
+            ->causedBy($user)
+            ->performedOn($user)
+            ->event('compte-resoumis')
+            ->log("{$user->name} a corrigé son compte et l'a resoumis");
+
+        return $this->authResponse($user->refresh());
+    }
+
+    /**
      * POST /auth/onboarding — complète le profil (utilisateurs Google, mais
      * applicable à tout utilisateur authentifié).
      */

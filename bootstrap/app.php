@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ClientAuth;
+use App\Http\Middleware\CompteValide;
 use App\Http\Middleware\StaffAuth;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -17,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'client' => ClientAuth::class,
+            'compte.valide' => CompteValide::class,
             'staff' => StaffAuth::class,
         ]);
 

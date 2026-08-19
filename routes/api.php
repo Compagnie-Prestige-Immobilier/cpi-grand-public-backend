@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Chantier\ChantierEventController;
 use App\Http\Controllers\Api\Chantier\ChantierMediaController;
 use App\Http\Controllers\Api\Chantier\ChantierPublicationController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\CompteValidationController;
 use App\Http\Controllers\Api\CpiDocController;
 use App\Http\Controllers\Api\DecaissementController;
 use App\Http\Controllers\Api\DemandeController;
@@ -62,13 +63,26 @@ Route::post('/auth/email/resend', [EmailVerificationController::class, 'resend']
 // Le contrôleur vérifie que le jeton en est bien un d'impersonation.
 Route::post('/impersonate/leave', [ImpersonationController::class, 'leave'])->middleware('auth:sanctum');
 
+// Correction + resoumission d'un compte refusé. Volontairement HORS du groupe
+// `compte.valide` : c'est justement ce que ce middleware bloquerait.
+Route::put('/auth/mon-compte', [AuthController::class, 'updateMonCompte'])->middleware('auth:sanctum');
+
 /*
 |--------------------------------------------------------------------------
 | CLIENT ROUTES — auth:sanctum + client middleware
 |--------------------------------------------------------------------------
 */
 
+// Le formulaire de support vit HORS du groupe verrouillé : une personne dont le
+// compte attend une validation doit pouvoir demander pourquoi. C'est son seul
+// recours, et le lui fermer serait le meilleur moyen de recevoir des appels.
+// `throttle:support` (ajouté par ailleurs) : un compte non validé ne doit pas
+// pouvoir se servir de ce formulaire comme relais d'envoi illimité.
 Route::middleware(['auth:sanctum', 'client'])->prefix('client')->group(function () {
+    Route::post('/support', [SupportController::class, 'send'])->middleware('throttle:support');
+});
+
+Route::middleware(['auth:sanctum', 'client', 'compte.valide'])->prefix('client')->group(function () {
 
     // login/logout/me live under /auth — unified for all user types
 
@@ -100,9 +114,6 @@ Route::middleware(['auth:sanctum', 'client'])->prefix('client')->group(function 
     // Own bank assignments
     Route::get('/mes-banques', [BankController::class, 'myAssignments']);
 
-    // Support — le message part par courriel vers la boîte du support.
-    Route::post('/support', [SupportController::class, 'send'])->middleware('throttle:support');
-
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'mine']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
@@ -126,6 +137,13 @@ Route::middleware(['auth:sanctum', 'staff'])->prefix('staff')->group(function ()
     // Prise en main d'un compte client (agent + administrateur côté serveur ;
     // l'interface ne propose le bouton qu'aux administrateurs pour l'instant).
     Route::post('/impersonate/{user}', [ImpersonationController::class, 'start']);
+
+    // Validation des comptes — permission `validate-accounts`, super-admin
+    // uniquement (vérifié dans le contrôleur : le middleware `staff` ne
+    // garantit que le rôle, pas la permission fine).
+    Route::get('/comptes/en-attente', [CompteValidationController::class, 'enAttente']);
+    Route::post('/comptes/{user}/valider', [CompteValidationController::class, 'valider']);
+    Route::post('/comptes/{user}/rejeter', [CompteValidationController::class, 'rejeter']);
 
     // Clients
     Route::get('/clients', [ClientController::class, 'index']);

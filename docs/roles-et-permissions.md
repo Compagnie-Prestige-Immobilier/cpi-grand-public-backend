@@ -37,6 +37,7 @@ en est le reflet lisible — le modifier sans modifier le seeder ne change rien.
 | `view-notifications` | ✔ | ✔ | ✔ |
 | `manage-staff` | | | ✔ |
 | `view-stats` | | | ✔ |
+| `validate-accounts` | | | ✔ |
 | `manage-demo-data` | | | ✔ |
 | `view-own-profile` / `edit-own-profile` | ✔ | ✔ | ✔ |
 
