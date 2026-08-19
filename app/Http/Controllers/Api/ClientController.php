@@ -6,6 +6,7 @@ use App\Dto\ClientData;
 use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Models\User;
 use App\Services\DemoDataService;
 use App\Services\NotifieLeClient;
 use App\Support\AttributionConseiller;
@@ -263,6 +264,45 @@ class ClientController extends Controller
         return response()->json(['data' => [
             'message' => "Conseiller attribué : {$conseiller->name}.",
             'conseiller' => ['id' => $conseiller->id, 'name' => $conseiller->name],
+        ]]);
+    }
+
+    /**
+     * PUT /staff/clients/{client}/conseiller — réattribution manuelle, vers
+     * un agent-cpi DÉSIGNÉ par l'administrateur.
+     *
+     * Distincte de `attribuerConseiller()` ci-dessus : celle-ci élit l'agent
+     * le moins chargé, celle-ci laisse l'administrateur choisir — la seule
+     * façon de déplacer un dossier déjà suivi (départ d'un agent,
+     * réorganisation de portefeuille, correction d'une attribution erronée).
+     *
+     * Gardée par `manage-staff` plutôt que par la policy `update` : un
+     * agent-cpi qui possède déjà le dossier ne doit pas pouvoir se le
+     * transférer lui-même à un collègue, seul un administrateur décide qui
+     * porte quel portefeuille.
+     */
+    public function reattribuerConseiller(Request $request, Client $client): JsonResponse
+    {
+        $this->authorize('manage-staff');
+
+        $validated = $request->validate([
+            'conseiller_id' => 'required|uuid|exists:users,id',
+        ]);
+
+        $nouveauConseiller = User::role('agent-cpi')->find($validated['conseiller_id']);
+        abort_if($nouveauConseiller === null, 422, 'Cet identifiant ne correspond pas à un agent CPI.');
+
+        abort_if(
+            $client->conseiller_id === $nouveauConseiller->id,
+            409,
+            'Ce dossier est déjà attribué à cet agent.',
+        );
+
+        AttributionConseiller::assignerManuellement($client, $nouveauConseiller, $request->user(), $this->notifie);
+
+        return response()->json(['data' => [
+            'message' => "Conseiller réattribué : {$nouveauConseiller->name}.",
+            'conseiller' => ['id' => $nouveauConseiller->id, 'name' => $nouveauConseiller->name],
         ]]);
     }
 

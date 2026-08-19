@@ -6,6 +6,7 @@ use App\Enums\RequisDocStatut;
 use App\Enums\StatutCompte;
 use App\Models\Client;
 use App\Models\Demande;
+use App\Models\Notification;
 use App\Models\User;
 use App\Support\AttributionConseiller;
 use App\Support\ParcoursDossier;
@@ -244,5 +245,129 @@ class AttributionConseillerTest extends TestCase
             'client_id' => $client->id,
             'titre' => 'Conseiller attribué',
         ]);
+    }
+
+    // ── Réattribution manuelle (PUT /staff/clients/{client}/conseiller) ──
+
+    public function test_admin_moves_a_dossier_from_one_agent_to_another(): void
+    {
+        $ancien = $this->agent('Ancien');
+        $nouveau = $this->agent('Nouveau');
+        $client = $this->client($ancien);
+
+        $this->withToken($this->jetonAdmin())
+            ->putJson("/api/staff/clients/{$client->id}/conseiller", ['conseiller_id' => $nouveau->id])
+            ->assertOk()
+            ->assertJsonPath('data.conseiller.id', $nouveau->id);
+
+        $client->refresh();
+        $this->assertSame($nouveau->id, $client->conseiller_id);
+        $this->assertSame($nouveau->name, $client->conseiller);
+    }
+
+    public function test_reassignment_is_journaled_with_both_agents(): void
+    {
+        $ancien = $this->agent('Ancien');
+        $nouveau = $this->agent('Nouveau');
+        $client = $this->client($ancien);
+
+        $this->withToken($this->jetonAdmin())
+            ->putJson("/api/staff/clients/{$client->id}/conseiller", ['conseiller_id' => $nouveau->id]);
+
+        $entree = Activity::where('event', 'conseiller-reattribue')->first();
+        $this->assertNotNull($entree);
+        $this->assertSame($ancien->id, $entree->properties['ancien_conseiller_id']);
+        $this->assertSame($nouveau->id, $entree->properties['nouveau_conseiller_id']);
+    }
+
+    /** Les DEUX agents reçoivent une notification — l'un perd le dossier, l'autre le reçoit. */
+    public function test_reassignment_notifies_both_the_former_and_the_new_agent(): void
+    {
+        $ancien = $this->agent('Ancien');
+        $nouveau = $this->agent('Nouveau');
+        $client = $this->client($ancien);
+
+        $this->withToken($this->jetonAdmin())
+            ->putJson("/api/staff/clients/{$client->id}/conseiller", ['conseiller_id' => $nouveau->id]);
+
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $ancien->id,
+            'client_id' => null,
+        ]);
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $nouveau->id,
+            'client_id' => null,
+        ]);
+    }
+
+    /**
+     * Une notification de portefeuille ne doit JAMAIS porter le `client_id`
+     * du dossier concerné : `NotificationController::mine()` élargit la boîte
+     * d'un client par `client_id`, une notification adressée à l'agent
+     * fuiterait donc dans la boîte du CLIENT lui-même.
+     */
+    public function test_a_staff_reassignment_notification_never_leaks_into_the_clients_own_inbox(): void
+    {
+        $ancien = $this->agent('Ancien');
+        $nouveau = $this->agent('Nouveau');
+        $client = $this->client($ancien);
+
+        $this->withToken($this->jetonAdmin())
+            ->putJson("/api/staff/clients/{$client->id}/conseiller", ['conseiller_id' => $nouveau->id]);
+
+        $reponse = $this->withToken($client->user->createToken('t')->plainTextToken)
+            ->getJson('/api/client/notifications')
+            ->assertOk();
+
+        $titres = array_column((array) $reponse->json('data'), 'titre');
+        $this->assertNotContains('Portefeuille modifié', $titres);
+    }
+
+    /** L'attribution initiale d'un dossier resté sans conseiller passe par le même chemin. */
+    public function test_admin_can_assign_an_unassigned_dossier_to_a_chosen_agent(): void
+    {
+        $agent = $this->agent();
+        $client = $this->client();   // sans conseiller
+
+        $this->withToken($this->jetonAdmin())
+            ->putJson("/api/staff/clients/{$client->id}/conseiller", ['conseiller_id' => $agent->id])
+            ->assertOk();
+
+        $this->assertSame($agent->id, $client->refresh()->conseiller_id);
+        // Sans conseiller AVANT : une seule notification de portefeuille (le
+        // nouvel agent), aucune pour un « ancien conseiller » qui n'existait pas.
+        $this->assertSame(1, Notification::whereNull('client_id')->count());
+    }
+
+    public function test_agent_cannot_reassign_a_dossier(): void
+    {
+        $ancien = $this->agent('Ancien');
+        $nouveau = $this->agent('Nouveau');
+        $client = $this->client($ancien);
+
+        $this->withToken($ancien->createToken('t')->plainTextToken)
+            ->putJson("/api/staff/clients/{$client->id}/conseiller", ['conseiller_id' => $nouveau->id])
+            ->assertStatus(403);
+    }
+
+    public function test_reassignment_to_the_same_agent_is_rejected(): void
+    {
+        $agent = $this->agent();
+        $client = $this->client($agent);
+
+        $this->withToken($this->jetonAdmin())
+            ->putJson("/api/staff/clients/{$client->id}/conseiller", ['conseiller_id' => $agent->id])
+            ->assertStatus(409);
+    }
+
+    public function test_reassignment_to_a_non_agent_account_is_rejected(): void
+    {
+        $client = $this->client($this->agent());
+        $unClient = User::factory()->create();
+        $unClient->assignRole('client');
+
+        $this->withToken($this->jetonAdmin())
+            ->putJson("/api/staff/clients/{$client->id}/conseiller", ['conseiller_id' => $unClient->id])
+            ->assertStatus(422);
     }
 }

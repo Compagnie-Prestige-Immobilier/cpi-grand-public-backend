@@ -111,6 +111,29 @@ repérable (mais SEULEMENT après coup) via l'écran « Dossiers non attribués 
 ci-dessus. Avant de supprimer un compte agent, vérifiez s'il porte des
 dossiers actifs et réattribuez-les — rien ne le fait automatiquement.
 
+**Réattribution manuelle** — `PUT /staff/clients/{client}/conseiller`, corps
+`{ "conseiller_id": "..." }`, réservée au super-admin (`manage-staff`). À la
+différence des deux routes ci-dessus (qui élisent toujours l'agent le moins
+chargé), c'est l'administrateur qui CHOISIT le destinataire — c'est la route à
+utiliser pour déplacer un dossier déjà suivi d'un agent vers un autre (départ,
+réorganisation de portefeuille, correction d'une attribution erronée), pas
+seulement pour les dossiers non attribués. Répond 409 si le dossier est déjà
+chez l'agent choisi, 422 si l'identifiant fourni n'est pas un compte
+`agent-cpi`. Journalisée sous `conseiller-reattribue`
+(`ancien_conseiller_id`/`nouveau_conseiller_id` dans les propriétés) ; les DEUX
+agents reçoivent une notification de portefeuille (`app_notifications`,
+`client_id` volontairement `null` — voir `AttributionConseiller::notifierAgent()`
+pour pourquoi), le client reçoit la même notification qu'à une première
+attribution.
+
+**Charge par agent** — `GET /staff/stats/agent` (et le bloc `agent` de
+`GET /staff/stats/dashboard`) est cloisonné par portefeuille depuis cette même
+évolution : un agent-cpi n'y voit QUE ses propres dossiers, le super-admin voit
+la plateforme entière. Avant ce correctif, cet endpoint ignorait
+`conseiller_id` partout — un agent lisait la charge de travail de TOUS ses
+collègues comme si c'était la sienne. `GET /staff/stats/admin` reste, lui,
+volontairement une vue de plateforme, jamais cloisonnée.
+
 ## Journal d'activité
 
 Tout passe par `spatie/laravel-activitylog`, consultable par le personnel via

@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Client;
+use App\Models\Notification;
 use App\Models\User;
 use App\Services\NotifieLeClient;
 use Illuminate\Support\Facades\DB;
@@ -116,6 +117,88 @@ final class AttributionConseiller
         $notifie->conseillerAttribue($client, $conseiller->name);
 
         return $conseiller;
+    }
+
+    /**
+     * Réattribution manuelle : l'administrateur choisit explicitement le
+     * nouvel agent, à la différence de `assigner()`/`assignerEtNotifier()`
+     * qui élisent l'agent le moins chargé. Sert aussi bien à attribuer un
+     * dossier resté sans conseiller qu'à déplacer un dossier déjà suivi d'un
+     * agent vers un autre (départ, réorganisation de portefeuille, erreur
+     * d'attribution) — c'est le SEUL point d'entrée où le portefeuille d'un
+     * agent peut perdre un dossier plutôt qu'en gagner un.
+     *
+     * Les deux agents concernés sont notifiés côté personnel quand il y en
+     * avait un avant : celui qui perd le dossier doit le savoir, sans quoi il
+     * continuerait à y répondre à l'insu du nouveau conseiller. Le client
+     * reçoit la même notification que pour une première attribution — de son
+     * point de vue, seul le nom du conseiller change.
+     */
+    public static function assignerManuellement(
+        Client $client,
+        User $nouveauConseiller,
+        User $operateur,
+        NotifieLeClient $notifie,
+    ): void {
+        $ancienConseillerId = $client->conseiller_id;
+        $ancienConseillerNom = $client->conseiller;
+
+        DB::transaction(function () use ($client, $nouveauConseiller): void {
+            $client->update([
+                'conseiller_id' => $nouveauConseiller->id,
+                'conseiller' => $nouveauConseiller->name,
+            ]);
+        });
+
+        activity()
+            ->causedBy($operateur)
+            ->performedOn($client)
+            ->withProperties([
+                'ancien_conseiller_id' => $ancienConseillerId,
+                'nouveau_conseiller_id' => $nouveauConseiller->id,
+            ])
+            ->event('conseiller-reattribue')
+            ->log($ancienConseillerId === null
+                ? "{$operateur->name} a attribué {$client->name} à {$nouveauConseiller->name}"
+                : "{$operateur->name} a réattribué {$client->name} de {$ancienConseillerNom} à {$nouveauConseiller->name}");
+
+        $notifie->conseillerAttribue($client, $nouveauConseiller->name);
+
+        if ($ancienConseillerId !== null) {
+            self::notifierAgent(
+                $ancienConseillerId,
+                "Le dossier de {$client->name} vous a été retiré et attribué à {$nouveauConseiller->name}.",
+            );
+        }
+
+        self::notifierAgent(
+            $nouveauConseiller->id,
+            "Le dossier de {$client->name} vous a été attribué par {$operateur->name}.",
+        );
+    }
+
+    /**
+     * Notification adressée à un membre du personnel, pas à un client.
+     *
+     * `client_id` reste `null` volontairement : `NotificationController::mine()`
+     * élargit la boîte d'un CLIENT par `where('client_id', $client->id)`. Une
+     * notification de portefeuille qui porterait le `client_id` du dossier
+     * concerné fuiterait donc dans la boîte de ce client dès qu'il consulte
+     * ses propres notifications — le nom du client reste dans le texte du
+     * message, jamais dans une colonne que le client peut lire.
+     */
+    private static function notifierAgent(string $agentId, string $message): void
+    {
+        Notification::create([
+            'user_id' => $agentId,
+            'client_id' => null,
+            'titre' => 'Portefeuille modifié',
+            'message' => $message,
+            'type' => 'info',
+            'date' => now(),
+            'heure' => now()->format('H:i'),
+            'lu' => false,
+        ]);
     }
 
     /**
