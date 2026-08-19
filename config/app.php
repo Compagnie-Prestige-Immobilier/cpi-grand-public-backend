@@ -78,6 +78,19 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Adresse publique du frontend
+    |--------------------------------------------------------------------------
+    |
+    | Utilisée pour les liens envoyés par courriel (vérification d'adresse) :
+    | le lien doit ramener la personne sur l'application, pas sur l'API.
+    | Même valeur que FRONTEND_URL, déjà lue par config/cors.php.
+    |
+    */
+
+    'frontend_url' => rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/'),
+
     'locale' => env('APP_LOCALE', 'fr'),
 
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'fr'),

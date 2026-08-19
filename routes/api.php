@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Auth\AuthController;
+use App\Http\Controllers\Api\Auth\EmailVerificationController;
 use App\Http\Controllers\Api\Auth\SocialAuthController;
 use App\Http\Controllers\Api\BankController;
 use App\Http\Controllers\Api\Chantier\ChantierController;
@@ -43,6 +44,18 @@ Route::post('/auth/onboarding', [AuthController::class, 'completeOnboarding'])->
 Route::post('/auth/avatar', [AuthController::class, 'updateAvatar'])->middleware('auth:sanctum');
 Route::delete('/auth/avatar', [AuthController::class, 'removeAvatar'])->middleware('auth:sanctum');
 Route::get('/auth/onboarding-status', [AuthController::class, 'onboardingStatus'])->middleware('auth:sanctum');
+
+// Vérification d'adresse e-mail.
+//
+// `verify` est PUBLIQUE et signée : le lien est cliqué depuis une boîte mail,
+// souvent sur un autre appareil, sans jeton disponible. La signature et le hash
+// de l'adresse tiennent lieu d'authentification. Le renvoi, lui, exige un jeton
+// et reste limité en fréquence — sinon l'endpoint devient un relais d'envoi.
+Route::get('/auth/email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
+    ->middleware('signed')
+    ->name('verification.verify');
+Route::post('/auth/email/resend', [EmailVerificationController::class, 'resend'])
+    ->middleware(['auth:sanctum', 'throttle:6,60']);
 
 // Fin de prise en main : appelée AVEC le jeton d'impersonation, donc par un
 // compte client — elle ne peut pas vivre derrière le middleware `staff`.

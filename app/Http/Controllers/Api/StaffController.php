@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Dto\UserData;
+use App\Enums\StatutCompte;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -51,6 +52,14 @@ class StaffController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($tempPassword),
+            // Un compte du personnel est créé PAR un administrateur : le faire
+            // passer par la vérification d'adresse puis par une file de
+            // validation le laisserait bloqué dehors, alors que la validation
+            // humaine a déjà eu lieu — c'est cette création même.
+            'email_verified_at' => now(),
+            'statut_compte' => StatutCompte::Valide,
+            'validated_by' => $request->user()?->id,
+            'validated_at' => now(),
         ]);
 
         $user->assignRole($validated['role']);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Dto\UserData;
+use App\Enums\StatutCompte;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\User;
@@ -53,6 +54,12 @@ class AuthController extends Controller
                 'email' => $validated['email'],
                 'password' => Hash::make($validated['password']),
                 'phone' => $validated['phone'] ?? null,
+                // Statut posé EXPLICITEMENT et non laissé au défaut SQL :
+                // `create()` ne relit pas la ligne, l'instance en mémoire
+                // ignorerait la valeur par défaut et la réponse d'inscription
+                // renverrait `statutCompte: null` — le frontend ne saurait pas
+                // qu'il doit afficher l'écran d'attente.
+                'statut_compte' => StatutCompte::EmailAVerifier,
             ]);
             $user->assignRole('client');
 
@@ -68,6 +75,15 @@ class AuthController extends Controller
             return $user;
         });
 
+        // Le courriel part APRÈS la transaction : l'envoi peut être lent ou
+        // échouer, et il n'a aucune raison de faire échouer une inscription
+        // déjà écrite en base.
+        $user->sendEmailVerificationNotification();
+
+        // Un jeton est délivré malgré tout : sans lui, la personne ne pourrait
+        // même pas consulter l'écran qui lui explique ce qu'elle attend. Les
+        // routes de l'espace client restent fermées tant que le compte n'est
+        // pas validé (middleware `compte.valide`).
         $token = $user->createToken('api-token')->plainTextToken;
 
         return $this->authResponse($user, $token, 201);

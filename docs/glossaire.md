@@ -18,6 +18,7 @@ nouvelle table ou un nouveau champ.
 | **agent-cpi** | Rôle du personnel opérationnel. Prépare les dossiers, valide les pièces, publie les documents, pilote les chantiers. Ne déclenche PAS les versements. |
 | **super-admin** | Rôle d'administration. Voit tous les dossiers, gère les comptes du personnel, déclenche les versements, charge et purge les données de démonstration. |
 | **Banque** | Établissement partenaire vers lequel un dossier est orienté. Rend un accord ou un refus. |
+| **Validation de compte** | Feu vert donné par un administrateur à un compte nouvellement inscrit. Distincte de la **vérification d'adresse**, qui est automatique et ne prouve que l'existence de l'e-mail. Tant que le compte n'est pas validé, il n'accède à rien. Voir `StatutCompte` dans [statuts.md](statuts.md). |
 
 ## Cycle du dossier
 

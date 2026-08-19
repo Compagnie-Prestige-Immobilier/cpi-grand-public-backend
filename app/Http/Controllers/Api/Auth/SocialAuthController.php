@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Dto\UserData;
+use App\Enums\StatutCompte;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\User;
@@ -66,6 +67,12 @@ class SocialAuthController extends Controller
                     'google_id' => $googleUser->getId(),
                     'avatar' => $googleUser->getAvatar(),
                     'needs_onboarding' => true,   // must complete profile
+                    // Google a déjà prouvé la possession de l'adresse : lui
+                    // redemander une vérification n'apporterait rien et
+                    // bloquerait le compte sur une étape sans objet. Le compte
+                    // passe directement en file d'attente de validation.
+                    'email_verified_at' => now(),
+                    'statut_compte' => StatutCompte::EnAttenteValidation,
                 ]);
                 $user->assignRole('client');
 
