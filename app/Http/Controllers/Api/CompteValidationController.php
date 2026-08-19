@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\StatutCompte;
 use App\Http\Controllers\Controller;
+use App\Models\Notification;
 use App\Models\User;
+use App\Support\AttributionConseiller;
 use App\Support\TransitionStatut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -69,11 +71,69 @@ class CompteValidationController extends Controller
             ->event('compte-valide')
             ->log("{$request->user()?->name} a validé le compte de {$user->name}");
 
-        // L'attribution d'un conseiller arrive à l'étape suivante : ce point
-        // d'entrée est le bon endroit pour la déclencher, elle n'existe pas
-        // encore.
+        $conseiller = $this->attribuerConseiller($request, $user);
 
-        return response()->json(['data' => ['message' => 'Compte validé.']]);
+        return response()->json(['data' => [
+            'message' => $conseiller !== null
+                ? "Compte validé — conseiller attribué : {$conseiller->name}."
+                : 'Compte validé — aucun agent CPI disponible pour l\'instant, le dossier reste sans conseiller.',
+            'conseiller' => $conseiller !== null ? ['id' => $conseiller->id, 'name' => $conseiller->name] : null,
+        ]]);
+    }
+
+    /**
+     * Attribution automatique, déclenchée par la validation.
+     *
+     * Ne fait rien échouer : un dossier n'a de client à qui l'attribuer QUE si
+     * `$user->client` existe — vrai pour toute inscription normale, mais un
+     * compte peut en théorie atterrir ici sans dossier (jamais vu en
+     * pratique ; mieux vaut un no-op silencieux qu'une 500 sur la validation
+     * elle-même, qui elle a déjà réussi).
+     */
+    private function attribuerConseiller(Request $request, User $user): ?User
+    {
+        $client = $user->client;
+        if ($client === null) {
+            return null;
+        }
+
+        $conseiller = AttributionConseiller::assigner($client);
+
+        if ($conseiller === null) {
+            // Distinct de « compte-valide » : un administrateur qui parcourt le
+            // journal doit pouvoir repérer les dossiers restés sans conseiller
+            // sans avoir à recouper la liste du personnel lui-même.
+            activity()
+                ->causedBy($request->user())
+                ->performedOn($client)
+                ->event('conseiller-non-attribue')
+                ->log("Aucun agent CPI disponible pour attribuer un conseiller à {$client->name}");
+
+            return null;
+        }
+
+        activity()
+            ->causedBy($request->user())
+            ->performedOn($client)
+            ->withProperties(['conseiller_id' => $conseiller->id])
+            ->event('conseiller-attribue')
+            ->log("{$conseiller->name} a été attribué comme conseiller de {$client->name}");
+
+        if ($client->user_id !== null) {
+            Notification::create([
+                'client_id' => $client->id,
+                'user_id' => $client->user_id,
+                'titre' => 'Conseiller attribué',
+                'message' => "Votre conseiller CPI est désormais {$conseiller->name}. Vous pouvez accéder à votre espace et déposer vos pièces.",
+                'type' => 'validation',
+                'target_page' => 'ma-demande',
+                'date' => now(),
+                'heure' => now()->format('H:i'),
+                'lu' => false,
+            ]);
+        }
+
+        return $conseiller;
     }
 
     /**

@@ -79,6 +79,27 @@ sinon le dossier reviendrait en coquille vide.
 Les données de démonstration, elles, sont purgées définitivement
 (`DELETE /staff/demo/clear`).
 
+## Validation des comptes et attribution
+
+`GET /staff/comptes/en-attente` liste les comptes vérifiés en attente d'une
+décision (`super-admin` uniquement, permission `validate-accounts`). Valider
+déclenche l'attribution automatique à l'agent-cpi le moins chargé
+(`App\Support\AttributionConseiller`) — cherchez `conseiller-attribue` dans le
+journal pour voir qui a reçu quoi, `conseiller-non-attribue` pour les dossiers
+restés sans conseiller.
+
+**Aucun agent-cpi n'existe encore** (déploiement neuf) : la validation réussit
+quand même, le dossier reste sans conseiller. Créez le premier agent
+(`POST /staff/staff/create`), puis attribuez à la main via
+`PUT /staff/clients/{client}` (`conseiller_id` **et** `conseiller` — les deux
+colonnes, voir [glossaire.md](glossaire.md)) ; les validations suivantes
+s'équilibreront normalement.
+
+**Un agent est supprimé** (`DELETE /staff/staff/{user}`) : `conseiller_id` est
+`nullOnDelete`, tout son portefeuille repasse silencieusement à « non attribué »
+— aucune notification, aucune entrée de journal dédiée. Avant de supprimer un
+compte agent, vérifiez s'il porte des dossiers actifs et réattribuez-les.
+
 ## Journal d'activité
 
 Tout passe par `spatie/laravel-activitylog`, consultable par le personnel via
