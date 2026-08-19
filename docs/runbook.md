@@ -91,14 +91,25 @@ restés sans conseiller.
 **Aucun agent-cpi n'existe encore** (déploiement neuf) : la validation réussit
 quand même, le dossier reste sans conseiller. Créez le premier agent
 (`POST /staff/staff/create`), puis attribuez à la main via
-`PUT /staff/clients/{client}` (`conseiller_id` **et** `conseiller` — les deux
-colonnes, voir [glossaire.md](glossaire.md)) ; les validations suivantes
-s'équilibreront normalement.
+`POST /staff/clients/{client}/attribuer-conseiller` — même règle que
+l'automatisme (le moins chargé), tient les deux colonnes `conseiller_id` et
+`conseiller` synchronisées (voir [glossaire.md](glossaire.md)). `PUT
+/staff/clients/{client}` ne suffit PAS : cette route accepte `conseiller`
+(texte) mais jamais `conseiller_id` — l'écrire seul y laisserait le dossier
+invisible de l'agent malgré le nom affiché.
+
+**Cloisonnement STRICT depuis STEP 4** : un dossier non attribué n'est plus
+visible d'AUCUN agent-cpi (l'ancien filet de sécurité « ouvert à tous » a
+disparu). Le super-admin seul les retrouve, via
+`GET /staff/clients?non_attribues=1` — écran « Dossiers non attribués » côté
+interface — puis les attribue un par un avec la route ci-dessus.
 
 **Un agent est supprimé** (`DELETE /staff/staff/{user}`) : `conseiller_id` est
 `nullOnDelete`, tout son portefeuille repasse silencieusement à « non attribué »
-— aucune notification, aucune entrée de journal dédiée. Avant de supprimer un
-compte agent, vérifiez s'il porte des dossiers actifs et réattribuez-les.
+— aucune notification, aucune entrée de journal dédiée. Il redevient
+repérable (mais SEULEMENT après coup) via l'écran « Dossiers non attribués »
+ci-dessus. Avant de supprimer un compte agent, vérifiez s'il porte des
+dossiers actifs et réattribuez-les — rien ne le fait automatiquement.
 
 ## Journal d'activité
 

@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Client;
 use App\Models\User;
+use App\Services\NotifieLeClient;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -73,6 +74,48 @@ final class AttributionConseiller
 
             return $conseiller;
         });
+    }
+
+    /**
+     * Attribue, journalise et notifie — le trajet complet déclenché par une
+     * décision humaine (validation d'un compte, réattribution manuelle).
+     *
+     * `assigner()` reste volontairement PUR (aucun journal, aucune
+     * notification) : c'est ce que les tests d'équilibrage de charge
+     * exercent directement, sans avoir à faire semblant d'un opérateur ou
+     * d'un service de notification. Cette méthode-ci est celle que les
+     * CONTRÔLEURS appellent — les deux points d'entrée (validation de compte,
+     * réattribution manuelle) doivent produire exactement la même trace et le
+     * même message, jamais deux versions qui divergent avec le temps.
+     */
+    public static function assignerEtNotifier(Client $client, User $operateur, NotifieLeClient $notifie): ?User
+    {
+        $conseiller = self::assigner($client);
+
+        if ($conseiller === null) {
+            // Distinct de l'événement qui a déclenché l'appel (validation ou
+            // réattribution) : un administrateur qui parcourt le journal doit
+            // pouvoir repérer les dossiers restés sans conseiller sans avoir à
+            // recouper la liste du personnel lui-même.
+            activity()
+                ->causedBy($operateur)
+                ->performedOn($client)
+                ->event('conseiller-non-attribue')
+                ->log("Aucun agent CPI disponible pour attribuer un conseiller à {$client->name}");
+
+            return null;
+        }
+
+        activity()
+            ->causedBy($operateur)
+            ->performedOn($client)
+            ->withProperties(['conseiller_id' => $conseiller->id])
+            ->event('conseiller-attribue')
+            ->log("{$conseiller->name} a été attribué comme conseiller de {$client->name}");
+
+        $notifie->conseillerAttribue($client, $conseiller->name);
+
+        return $conseiller;
     }
 
     /**

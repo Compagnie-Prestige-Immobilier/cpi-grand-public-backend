@@ -154,6 +154,10 @@ Route::middleware(['auth:sanctum', 'staff'])->prefix('staff')->group(function ()
     Route::get('/clients/{client}/summary', [ClientController::class, 'summary']);
     Route::post('/clients/{client}/dossier-etape', [ClientController::class, 'setDossierEtape']);
     Route::get('/clients/{client}/dossier-journey', [ClientController::class, 'dossierJourney']);
+    // Réattribution manuelle — voir ClientController::attribuerConseiller : la
+    // policy `update` referme déjà cette porte à un agent-cpi sur un dossier
+    // non attribué, aucune permission dédiée à déclarer.
+    Route::post('/clients/{client}/attribuer-conseiller', [ClientController::class, 'attribuerConseiller']);
     // Correction de la demande par le personnel : le client la perd à l'étape
     // « Analyse » (DemandeController::ETAPE_VERROUILLAGE), l'agent la garde.
     Route::put('/clients/{client}/demande', [DemandeController::class, 'updateForClient']);
