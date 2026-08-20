@@ -22,7 +22,22 @@ class NotificationClientTest extends TestCase
 
     protected bool $seed = true;
 
-    /** @return array{0: User, 1: Client} */
+    private function agent(): User
+    {
+        /** @var User $agent */
+        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
+
+        return $agent;
+    }
+
+    /**
+     * `conseiller_id` par défaut à l'agent seedé : ces tests portent sur LA
+     * NOTIFICATION envoyée par une mutation, pas sur le cloisonnement — sous
+     * le cloisonnement strict, l'agent doit pouvoir atteindre le dossier pour
+     * que la mutation ait seulement lieu.
+     *
+     * @return array{0: User, 1: Client}
+     */
     private function dossier(): array
     {
         $user = User::factory()->create();
@@ -31,6 +46,7 @@ class NotificationClientTest extends TestCase
             'user_id' => $user->id,
             'name' => $user->name,
             'ref' => Client::generateRef(),
+            'conseiller_id' => $this->agent()->id,
         ])->refresh();
 
         return [$user, $client];
@@ -38,8 +54,7 @@ class NotificationClientTest extends TestCase
 
     private function agentToken(): string
     {
-        return User::query()->where('email', 'agent@cpi.sn')->firstOrFail()
-            ->createToken('t')->plainTextToken;
+        return $this->agent()->createToken('t')->plainTextToken;
     }
 
     private function adminToken(): string
@@ -147,7 +162,7 @@ class NotificationClientTest extends TestCase
     {
         // Un dossier ouvert par le personnel avant l'inscription du client n'a
         // personne à prévenir : l'envoi doit être sans effet, pas une erreur.
-        $client = Client::create(['name' => 'Sans compte', 'ref' => Client::generateRef()])->refresh();
+        $client = Client::create(['name' => 'Sans compte', 'ref' => Client::generateRef(), 'conseiller_id' => $this->agent()->id])->refresh();
 
         $this->withToken($this->agentToken())
             ->postJson("/api/staff/clients/{$client->id}/dossier-etape", ['etape' => 2])

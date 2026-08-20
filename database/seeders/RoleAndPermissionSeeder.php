@@ -35,6 +35,10 @@ class RoleAndPermissionSeeder extends Seeder
             'send-notifications', 'view-notifications',
             // System
             'manage-staff', 'view-stats', 'manage-demo-data',
+            // Validation des comptes : accordée au seul super-admin. Approuver
+            // un compte, c'est ouvrir l'accès à la plateforme — et, par
+            // ricochet, déclencher l'attribution d'un conseiller.
+            'validate-accounts',
             // Own profile
             'view-own-profile', 'edit-own-profile',
         ];

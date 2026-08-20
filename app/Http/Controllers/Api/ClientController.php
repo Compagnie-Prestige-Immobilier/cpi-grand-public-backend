@@ -6,8 +6,10 @@ use App\Dto\ClientData;
 use App\Http\Controllers\Concerns\ResoudLeDossierDuClient;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Models\User;
 use App\Services\DemoDataService;
 use App\Services\NotifieLeClient;
+use App\Support\AttributionConseiller;
 use App\Support\ParcoursDossier;
 use App\Support\PortefeuilleConseiller;
 use Illuminate\Http\JsonResponse;
@@ -81,6 +83,15 @@ class ClientController extends Controller
         // montants de tout le portefeuille CPI avant même de cliquer.
         $query = Client::query()->with('demande', 'requisDocs');
         PortefeuilleConseiller::filtrer($query, $request->user());
+
+        // `?non_attribues=1` — réservé de fait au super-admin : pour un
+        // agent-cpi, `filtrer()` a déjà tout restreint à SON portefeuille
+        // (jamais nul), donc ce filtre supplémentaire ne peut renvoyer que
+        // zéro résultat. Pas de garde-fou séparé à écrire ni à tester : c'est
+        // la conséquence mécanique du cloisonnement strict ci-dessus.
+        if ($request->boolean('non_attribues')) {
+            $query->whereNull('conseiller_id');
+        }
 
         return response()->json(ClientData::collect(
             $query->orderByDesc('created_at')->paginate(50),
@@ -167,8 +178,14 @@ class ClientController extends Controller
     {
         $this->authorize('delete', $client);
 
+        // `performedOn($client)` — omis jusqu'ici, seul événement métier du
+        // fichier dans ce cas : sans sujet, la suppression n'apparaissait ni
+        // dans l'historique DE ce dossier (`GET /staff/historique/{client}`),
+        // ni dans le journal cloisonné par portefeuille ci-dessous — l'agent
+        // responsable perdait la trace de la disparition de son propre client.
         activity()
             ->causedBy($request->user())
+            ->performedOn($client)
             ->event('client-supprime')
             ->log("{$request->user()?->name} a supprimé le dossier client {$client->name}");
 
@@ -219,6 +236,74 @@ class ClientController extends Controller
         $this->notifie->etapeDossier($client, (int) $validated['etape']);
 
         return response()->json(['data' => ClientData::from($client->refresh())]);
+    }
+
+    /**
+     * POST /staff/clients/{client}/attribuer-conseiller — attribution
+     * manuelle, à l'agent-cpi le moins chargé.
+     *
+     * Réservé de fait au super-admin : `authorize('update', $client)` refuse
+     * déjà tout agent-cpi sur un dossier non attribué depuis que le
+     * cloisonnement est strict (`PortefeuilleConseiller::contient`) — aucune
+     * permission séparée à déclarer ni à tester, c'est la policy déjà en
+     * place qui referme cette porte.
+     *
+     * Complète l'attribution automatique de la validation de compte pour les
+     * dossiers qui y ont échappé : aucun agent-cpi disponible au moment de
+     * l'approbation, ou dossier créé directement par le personnel
+     * (`store()` n'attribue jamais de `conseiller_id`).
+     */
+    public function attribuerConseiller(Request $request, Client $client): JsonResponse
+    {
+        $this->authorize('update', $client);
+
+        $conseiller = AttributionConseiller::assignerEtNotifier($client, $request->user(), $this->notifie);
+
+        abort_if($conseiller === null, 409, 'Aucun agent CPI disponible pour le moment.');
+
+        return response()->json(['data' => [
+            'message' => "Conseiller attribué : {$conseiller->name}.",
+            'conseiller' => ['id' => $conseiller->id, 'name' => $conseiller->name],
+        ]]);
+    }
+
+    /**
+     * PUT /staff/clients/{client}/conseiller — réattribution manuelle, vers
+     * un agent-cpi DÉSIGNÉ par l'administrateur.
+     *
+     * Distincte de `attribuerConseiller()` ci-dessus : celle-ci élit l'agent
+     * le moins chargé, celle-ci laisse l'administrateur choisir — la seule
+     * façon de déplacer un dossier déjà suivi (départ d'un agent,
+     * réorganisation de portefeuille, correction d'une attribution erronée).
+     *
+     * Gardée par `manage-staff` plutôt que par la policy `update` : un
+     * agent-cpi qui possède déjà le dossier ne doit pas pouvoir se le
+     * transférer lui-même à un collègue, seul un administrateur décide qui
+     * porte quel portefeuille.
+     */
+    public function reattribuerConseiller(Request $request, Client $client): JsonResponse
+    {
+        $this->authorize('manage-staff');
+
+        $validated = $request->validate([
+            'conseiller_id' => 'required|uuid|exists:users,id',
+        ]);
+
+        $nouveauConseiller = User::role('agent-cpi')->find($validated['conseiller_id']);
+        abort_if($nouveauConseiller === null, 422, 'Cet identifiant ne correspond pas à un agent CPI.');
+
+        abort_if(
+            $client->conseiller_id === $nouveauConseiller->id,
+            409,
+            'Ce dossier est déjà attribué à cet agent.',
+        );
+
+        AttributionConseiller::assignerManuellement($client, $nouveauConseiller, $request->user(), $this->notifie);
+
+        return response()->json(['data' => [
+            'message' => "Conseiller réattribué : {$nouveauConseiller->name}.",
+            'conseiller' => ['id' => $nouveauConseiller->id, 'name' => $nouveauConseiller->name],
+        ]]);
     }
 
     /**

@@ -43,13 +43,37 @@ class StatsTest extends TestCase
         auth()->forgetGuards();
     }
 
-    private function makeClient(string $name = 'Dossier'): Client
+    /**
+     * Attribué par défaut à `agent@cpi.sn` : `agentStats()` est désormais
+     * cloisonnée, comme `HistoriqueController::index()` l'est déjà — un
+     * dossier créé sans conseiller n'appartiendrait au portefeuille d'AUCUN
+     * agent, ce que la quasi-totalité des tests de ce fichier ne cherchent
+     * pas à exercer (voir `test_agent_stats_exclude_a_colleagues_portfolio`
+     * pour ce cas-là, précisément).
+     */
+    private function makeClient(string $name = 'Dossier', ?User $conseiller = null): Client
     {
         return Client::create([
             'name' => $name,
             'ref' => Client::generateRef(),
             'date_inscription' => now(),
+            'conseiller_id' => ($conseiller ?? $this->agent())->id,
         ])->refresh();
+    }
+
+    /** `agent@cpi.sn`, le compte que sert `agentToken()`. */
+    private function agent(): User
+    {
+        return User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
+    }
+
+    /** Un second agent-cpi, hors du seed — pour les tests de cloisonnement. */
+    private function collegue(string $nom = 'Collègue'): User
+    {
+        $u = User::factory()->create(['name' => $nom]);
+        $u->assignRole('agent-cpi');
+
+        return $u;
     }
 
     /**
@@ -173,6 +197,37 @@ class StatsTest extends TestCase
             ->assertJsonPath('data.chantiers.termines', 1)
             ->assertJsonPath('data.chantiers.progressionMoyenne', 80)
             ->assertJsonPath('data.chantiers.tranchesTerminees', 1);
+    }
+
+    /**
+     * Le cœur du cloisonnement : avant ce correctif, `agentStats()` ignorait
+     * `conseiller_id` partout — un agent-cpi lisait la charge de travail de
+     * la PLATEFORME ENTIÈRE sur `GET /staff/stats/agent`, y compris les
+     * dossiers de ses collègues.
+     */
+    public function test_agent_stats_exclude_a_colleagues_portfolio(): void
+    {
+        $collegue = $this->collegue();
+        $this->amenerAEtape($this->makeClient('À moi', $this->agent()), 2);
+        $this->amenerAEtape($this->makeClient('Au collègue', $collegue), 5);
+
+        $this->withToken($this->agentToken())->getJson('/api/staff/stats/agent')
+            ->assertOk()
+            ->assertJsonPath('data.clients.total', 1)
+            ->assertJsonPath('data.dossiers.parEtape', [0, 0, 1, 0, 0, 0])
+            ->assertJsonPath('data.dossiers.finalises', 0);
+    }
+
+    /** Le super-admin, lui, voit les deux portefeuilles réunis. */
+    public function test_admin_sees_every_agents_portfolio_combined_in_agent_stats(): void
+    {
+        $collegue = $this->collegue();
+        $this->makeClient('À moi', $this->agent());
+        $this->makeClient('Au collègue', $collegue);
+
+        $this->withToken($this->adminToken())->getJson('/api/staff/stats/agent')
+            ->assertOk()
+            ->assertJsonPath('data.clients.total', 2);
     }
 
     public function test_agent_stats_on_an_empty_platform_are_all_zero(): void
