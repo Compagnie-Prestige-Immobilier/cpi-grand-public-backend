@@ -175,7 +175,7 @@ class AuthController extends Controller
             'name' => 'sometimes|string|max:255',
             'phone' => 'sometimes|nullable|string|max:50',
             'employer' => 'sometimes|nullable|string|max:255',
-            'profile_type' => 'sometimes|nullable|in:fonctionnaire,prive,autre',
+            'profile_type' => 'sometimes|nullable|in:fonctionnaire,prive,autre,diaspora',
             'revenus' => 'sometimes|nullable|string|max:50',
         ]);
 
@@ -204,7 +204,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'phone' => 'required|string',
             'employer' => 'required|string',
-            'profile_type' => 'required|in:fonctionnaire,prive,autre',
+            'profile_type' => 'required|in:fonctionnaire,prive,autre,diaspora',
             'revenus' => 'required|string',
         ]);
 
