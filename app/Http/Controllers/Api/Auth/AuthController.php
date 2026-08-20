@@ -59,7 +59,16 @@ class AuthController extends Controller
                 // ignorerait la valeur par défaut et la réponse d'inscription
                 // renverrait `statutCompte: null` — le frontend ne saurait pas
                 // qu'il doit afficher l'écran d'attente.
-                'statut_compte' => StatutCompte::EmailAVerifier,
+                //
+                // EnAttenteValidation directement, PAS EmailAVerifier : la
+                // vérification d'e-mail est temporairement non bloquante (même
+                // traitement que Google — voir SocialAuthController — dont le
+                // fournisseur a déjà prouvé l'adresse). Le courriel part quand
+                // même juste après, pour qui veut vérifier de son plein gré ;
+                // seule la validation administrative reste un vrai barrage.
+                // Repasser à EmailAVerifier ici suffira à rouvrir la porte le
+                // jour où la vérification doit redevenir obligatoire.
+                'statut_compte' => StatutCompte::EnAttenteValidation,
             ]);
             $user->assignRole('client');
 
