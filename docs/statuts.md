@@ -11,15 +11,14 @@ jamais regarder d'où l'on venait.
 ## Compte utilisateur — `StatutCompte`
 
 Aucun compte n'accède à la plateforme avant qu'un administrateur ne l'ait
-validé : s'inscrire ne donne droit à rien. Deux filtres successifs, qui ne
-répondent pas à la même question — la vérification d'adresse prouve que
-l'e-mail existe (automatique), la validation administrative est un jugement
-humain sur les informations déclarées.
+validé : s'inscrire ne donne droit à rien. Deux filtres, qui ne répondent pas
+à la même question — la vérification d'adresse prouve que l'e-mail existe
+(automatique), la validation administrative est un jugement humain sur les
+informations déclarées. Seul le second est actuellement bloquant.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> email_a_verifier : inscription
-    [*] --> en_attente_validation : inscription via Google (adresse déjà prouvée)
+    [*] --> en_attente_validation : inscription (email/mot de passe ou Google)
     email_a_verifier --> en_attente_validation : lien de vérification cliqué
     en_attente_validation --> valide : un administrateur approuve
     en_attente_validation --> rejete : un administrateur refuse (motif obligatoire)
@@ -29,6 +28,17 @@ stateDiagram-v2
 `valide` est terminal : suspendre un compte est un autre sujet (désactivation),
 volontairement hors de ce cycle.
 
+**La vérification d'e-mail est temporairement NON bloquante.**
+`AuthController::register()` pose `en_attente_validation` directement — le
+même traitement que Google, dont le fournisseur a déjà prouvé l'adresse (voir
+`SocialAuthController`). Le courriel de vérification part quand même, pour qui
+veut vérifier de son plein gré, et `email_a_verifier` reste un état
+ATTEIGNABLE (compte créé avant l'assouplissement, ou construit directement en
+base/tests) : `EmailVerificationController::verify()` continue de le faire
+basculer en `en_attente_validation` au clic. Repasser `register()` sur
+`email_a_verifier` suffira à rouvrir la porte le jour où la vérification doit
+redevenir un vrai barrage.
+
 Exceptions assumées :
 
 - **Le personnel CPI** (`agent-cpi`, `super-admin`) est créé `valide` par un
@@ -36,7 +46,9 @@ Exceptions assumées :
   l'auteur n'aurait pas de sens.
 - **Les comptes antérieurs** à cette règle ont été validés d'office par la
   migration : personne ne devait se retrouver enfermé dehors par une règle qui
-  n'existait pas lors de son inscription.
+  n'existait pas lors de son inscription. Même logique pour les comptes restés
+  en `email_a_verifier` au moment de l'assouplissement — basculés d'office en
+  `en_attente_validation`.
 
 ## Pièce justificative — `RequisDocStatut`
 
