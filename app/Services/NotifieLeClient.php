@@ -102,6 +102,21 @@ class NotifieLeClient
         );
     }
 
+    /**
+     * Un conseiller vient d'être attribué au dossier — à la validation du
+     * compte (attribution automatique) ou à une réattribution manuelle.
+     */
+    public function conseillerAttribue(Client $client, string $nomConseiller): ?Notification
+    {
+        return $this->envoyer(
+            $client,
+            'Conseiller attribué',
+            "Votre conseiller CPI est désormais {$nomConseiller}. Vous pouvez accéder à votre espace et déposer vos pièces.",
+            'validation',
+            'ma-demande',
+        );
+    }
+
     /** Le dossier a changé d'étape dans le parcours. */
     public function etapeDossier(Client $client, int $etape): ?Notification
     {

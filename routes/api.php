@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Auth\AuthController;
+use App\Http\Controllers\Api\Auth\EmailVerificationController;
 use App\Http\Controllers\Api\Auth\SocialAuthController;
 use App\Http\Controllers\Api\BankController;
 use App\Http\Controllers\Api\Chantier\ChantierController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\Api\Chantier\ChantierEventController;
 use App\Http\Controllers\Api\Chantier\ChantierMediaController;
 use App\Http\Controllers\Api\Chantier\ChantierPublicationController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\CompteValidationController;
 use App\Http\Controllers\Api\CpiDocController;
 use App\Http\Controllers\Api\DecaissementController;
 use App\Http\Controllers\Api\DemandeController;
@@ -44,10 +46,26 @@ Route::post('/auth/avatar', [AuthController::class, 'updateAvatar'])->middleware
 Route::delete('/auth/avatar', [AuthController::class, 'removeAvatar'])->middleware('auth:sanctum');
 Route::get('/auth/onboarding-status', [AuthController::class, 'onboardingStatus'])->middleware('auth:sanctum');
 
+// Vérification d'adresse e-mail.
+//
+// `verify` est PUBLIQUE et signée : le lien est cliqué depuis une boîte mail,
+// souvent sur un autre appareil, sans jeton disponible. La signature et le hash
+// de l'adresse tiennent lieu d'authentification. Le renvoi, lui, exige un jeton
+// et reste limité en fréquence — sinon l'endpoint devient un relais d'envoi.
+Route::get('/auth/email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
+    ->middleware('signed')
+    ->name('verification.verify');
+Route::post('/auth/email/resend', [EmailVerificationController::class, 'resend'])
+    ->middleware(['auth:sanctum', 'throttle:6,60']);
+
 // Fin de prise en main : appelée AVEC le jeton d'impersonation, donc par un
 // compte client — elle ne peut pas vivre derrière le middleware `staff`.
 // Le contrôleur vérifie que le jeton en est bien un d'impersonation.
 Route::post('/impersonate/leave', [ImpersonationController::class, 'leave'])->middleware('auth:sanctum');
+
+// Correction + resoumission d'un compte refusé. Volontairement HORS du groupe
+// `compte.valide` : c'est justement ce que ce middleware bloquerait.
+Route::put('/auth/mon-compte', [AuthController::class, 'updateMonCompte'])->middleware('auth:sanctum');
 
 /*
 |--------------------------------------------------------------------------
@@ -55,7 +73,16 @@ Route::post('/impersonate/leave', [ImpersonationController::class, 'leave'])->mi
 |--------------------------------------------------------------------------
 */
 
+// Le formulaire de support vit HORS du groupe verrouillé : une personne dont le
+// compte attend une validation doit pouvoir demander pourquoi. C'est son seul
+// recours, et le lui fermer serait le meilleur moyen de recevoir des appels.
+// `throttle:support` (ajouté par ailleurs) : un compte non validé ne doit pas
+// pouvoir se servir de ce formulaire comme relais d'envoi illimité.
 Route::middleware(['auth:sanctum', 'client'])->prefix('client')->group(function () {
+    Route::post('/support', [SupportController::class, 'send'])->middleware('throttle:support');
+});
+
+Route::middleware(['auth:sanctum', 'client', 'compte.valide'])->prefix('client')->group(function () {
 
     // login/logout/me live under /auth — unified for all user types
 
@@ -87,9 +114,6 @@ Route::middleware(['auth:sanctum', 'client'])->prefix('client')->group(function 
     // Own bank assignments
     Route::get('/mes-banques', [BankController::class, 'myAssignments']);
 
-    // Support — le message part par courriel vers la boîte du support.
-    Route::post('/support', [SupportController::class, 'send'])->middleware('throttle:support');
-
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'mine']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
@@ -114,6 +138,13 @@ Route::middleware(['auth:sanctum', 'staff'])->prefix('staff')->group(function ()
     // l'interface ne propose le bouton qu'aux administrateurs pour l'instant).
     Route::post('/impersonate/{user}', [ImpersonationController::class, 'start']);
 
+    // Validation des comptes — permission `validate-accounts`, super-admin
+    // uniquement (vérifié dans le contrôleur : le middleware `staff` ne
+    // garantit que le rôle, pas la permission fine).
+    Route::get('/comptes/en-attente', [CompteValidationController::class, 'enAttente']);
+    Route::post('/comptes/{user}/valider', [CompteValidationController::class, 'valider']);
+    Route::post('/comptes/{user}/rejeter', [CompteValidationController::class, 'rejeter']);
+
     // Clients
     Route::get('/clients', [ClientController::class, 'index']);
     Route::get('/clients/{client}', [ClientController::class, 'show']);
@@ -123,6 +154,14 @@ Route::middleware(['auth:sanctum', 'staff'])->prefix('staff')->group(function ()
     Route::get('/clients/{client}/summary', [ClientController::class, 'summary']);
     Route::post('/clients/{client}/dossier-etape', [ClientController::class, 'setDossierEtape']);
     Route::get('/clients/{client}/dossier-journey', [ClientController::class, 'dossierJourney']);
+    // Attribution automatique (agent le moins chargé) — voir
+    // ClientController::attribuerConseiller : la policy `update` referme déjà
+    // cette porte à un agent-cpi sur un dossier non attribué, aucune
+    // permission dédiée à déclarer.
+    Route::post('/clients/{client}/attribuer-conseiller', [ClientController::class, 'attribuerConseiller']);
+    // Réattribution manuelle vers un agent DÉSIGNÉ par l'administrateur — voir
+    // ClientController::reattribuerConseiller, gardée par `manage-staff`.
+    Route::put('/clients/{client}/conseiller', [ClientController::class, 'reattribuerConseiller']);
     // Correction de la demande par le personnel : le client la perd à l'étape
     // « Analyse » (DemandeController::ETAPE_VERROUILLAGE), l'agent la garde.
     Route::put('/clients/{client}/demande', [DemandeController::class, 'updateForClient']);

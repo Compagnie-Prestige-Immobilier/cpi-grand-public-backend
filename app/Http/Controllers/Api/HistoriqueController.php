@@ -6,9 +6,11 @@ use App\Dto\ActivityLogData;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\User;
+use App\Support\PortefeuilleConseiller;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\LaravelData\PaginatedDataCollection;
 
@@ -31,11 +33,20 @@ class HistoriqueController extends Controller
      * GET /staff/historique — journal global, paginé (50 par page),
      * le plus récent en tête.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Activity::class);
 
-        $page = $this->journal()
+        // Cloisonné comme la liste des dossiers : sans ce filtre, tout
+        // agent-cpi lisait le journal COMPLET de la plateforme — identités,
+        // revenus, montants de décaissement, création et suppression de
+        // comptes du personnel — y compris pour des dossiers qu'il ne peut
+        // même plus ouvrir depuis le cloisonnement strict. Le super-admin
+        // n'est pas concerné (`PortefeuilleConseiller::voitTout`).
+        $query = $this->journal();
+        PortefeuilleConseiller::filtrerActivites($query, $request->user());
+
+        $page = $query
             ->orderByDesc('created_at')
             ->orderByDesc('id')   // départage les entrées de la même seconde
             ->paginate(50);

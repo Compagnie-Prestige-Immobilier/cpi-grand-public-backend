@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Dto\UserData;
+use App\Enums\StatutCompte;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\User;
@@ -53,6 +54,12 @@ class AuthController extends Controller
                 'email' => $validated['email'],
                 'password' => Hash::make($validated['password']),
                 'phone' => $validated['phone'] ?? null,
+                // Statut posé EXPLICITEMENT et non laissé au défaut SQL :
+                // `create()` ne relit pas la ligne, l'instance en mémoire
+                // ignorerait la valeur par défaut et la réponse d'inscription
+                // renverrait `statutCompte: null` — le frontend ne saurait pas
+                // qu'il doit afficher l'écran d'attente.
+                'statut_compte' => StatutCompte::EmailAVerifier,
             ]);
             $user->assignRole('client');
 
@@ -68,6 +75,15 @@ class AuthController extends Controller
             return $user;
         });
 
+        // Le courriel part APRÈS la transaction : l'envoi peut être lent ou
+        // échouer, et il n'a aucune raison de faire échouer une inscription
+        // déjà écrite en base.
+        $user->sendEmailVerificationNotification();
+
+        // Un jeton est délivré malgré tout : sans lui, la personne ne pourrait
+        // même pas consulter l'écran qui lui explique ce qu'elle attend. Les
+        // routes de l'espace client restent fermées tant que le compte n'est
+        // pas validé (middleware `compte.valide`).
         $token = $user->createToken('api-token')->plainTextToken;
 
         return $this->authResponse($user, $token, 201);
@@ -130,6 +146,52 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         return $this->authResponse($request->user());
+    }
+
+    /**
+     * PUT /auth/mon-compte — corrige les informations déclarées puis
+     * resoumet un compte refusé.
+     *
+     * Le refus donne un motif ; la personne corrige et repasse en file. Sans
+     * cette route, un refus serait définitif dans les faits — il n'existerait
+     * aucun moyen de revenir dessus autrement qu'en rouvrant un ticket support.
+     */
+    public function updateMonCompte(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        // Précondition explicite, et non un appel à TransitionStatut : ce
+        // dernier traite « déjà dans cet état » comme un no-op réussi (rejouer
+        // une action n'est pas une faute), ce qui aurait laissé un compte déjà
+        // EN ATTENTE resoumettre sans rien y gagner. Seul un compte REFUSÉ a
+        // quelque chose à corriger.
+        abort_unless(
+            $user->statut_compte === StatutCompte::Rejete,
+            409,
+            'Seul un compte refusé peut être corrigé et resoumis.',
+        );
+
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'phone' => 'sometimes|nullable|string|max:50',
+            'employer' => 'sometimes|nullable|string|max:255',
+            'profile_type' => 'sometimes|nullable|in:fonctionnaire,prive,autre',
+            'revenus' => 'sometimes|nullable|string|max:50',
+        ]);
+
+        $user->update([
+            ...$validated,
+            'statut_compte' => StatutCompte::EnAttenteValidation,
+            'motif_rejet' => null,
+        ]);
+
+        activity()
+            ->causedBy($user)
+            ->performedOn($user)
+            ->event('compte-resoumis')
+            ->log("{$user->name} a corrigé son compte et l'a resoumis");
+
+        return $this->authResponse($user->refresh());
     }
 
     /**

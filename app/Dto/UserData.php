@@ -2,6 +2,7 @@
 
 namespace App\Dto;
 
+use App\Enums\StatutCompte;
 use App\Models\User;
 use App\Services\StorageService;
 use Spatie\LaravelData\Attributes\Computed;
@@ -38,6 +39,12 @@ class UserData extends Data
         public readonly ?string $role,          // nom du rôle Spatie : client / agent-cpi / super-admin
         public readonly array $permissions,   // permissions résolues côté serveur (getAllPermissions)
         public readonly ?string $clientId = null, // id de la fiche Client associée (utilisateurs clients)
+        // État du compte : le frontend s'en sert pour router vers l'écran
+        // d'attente ou de refus plutôt que vers l'espace client.
+        public readonly ?StatutCompte $statutCompte = null,
+        public readonly bool $emailVerifie = false,
+        /** Motif du refus, communiqué pour que la personne sache quoi corriger. */
+        public readonly ?string $motifRejet = null,
     ) {
         $this->avatarUrl = match (true) {
             $avatar === null => null,
@@ -61,6 +68,9 @@ class UserData extends Data
             role: $user->getRoleNames()->first(),
             permissions: $user->getAllPermissions()->pluck('name')->all(),
             clientId: $user->client?->id,
+            statutCompte: $user->statut_compte,
+            emailVerifie: $user->hasVerifiedEmail(),
+            motifRejet: $user->motif_rejet,
         );
     }
 }

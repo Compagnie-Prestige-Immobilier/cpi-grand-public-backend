@@ -18,12 +18,17 @@ class ClientManagementTest extends TestCase
 
     protected bool $seed = true;
 
-    private function agentToken(): string
+    private function agent(): User
     {
         /** @var User $agent */
         $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
 
-        return $agent->createToken('t')->plainTextToken;
+        return $agent;
+    }
+
+    private function agentToken(): string
+    {
+        return $this->agent()->createToken('t')->plainTextToken;
     }
 
     private function adminToken(): string
@@ -34,7 +39,17 @@ class ClientManagementTest extends TestCase
         return $admin->createToken('t')->plainTextToken;
     }
 
-    /** @param  array<string, mixed>  $overrides */
+    /**
+     * `conseiller_id` par défaut à l'agent SEEDÉ : la plupart de ces tests
+     * portent sur une fonctionnalité (étape du dossier, résumé, journey…),
+     * pas sur le cloisonnement lui-même — le dossier doit simplement être
+     * atteignable par l'agent qui l'utilise. Le cloisonnement strict a rendu
+     * cette hypothèse nécessaire ; avant, un dossier sans conseiller restait
+     * ouvert à tout agent. Les tests qui portent SUR le cloisonnement
+     * (ci-dessous) construisent leur client directement, sans ce défaut.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
     private function makeClient(array $overrides = []): Client
     {
         return Client::create([
@@ -42,6 +57,7 @@ class ClientManagementTest extends TestCase
             'ref' => Client::generateRef(),
             'email' => uniqid('c').'@example.com',
             'date_inscription' => now(),
+            'conseiller_id' => $this->agent()->id,
             ...$overrides,
         ])->refresh();
     }
@@ -255,16 +271,21 @@ class ClientManagementTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_an_unassigned_dossier_stays_open_to_any_agent(): void
+    public function test_an_unassigned_dossier_is_closed_to_every_agent(): void
     {
-        // Sinon les nouvelles demandes tomberaient dans un angle mort le temps
-        // qu'un administrateur les attribue.
+        // Cloisonnement STRICT (revu depuis) : un dossier sans conseiller
+        // n'est plus un filet de sécurité ouvert à tout agent. Deux choses le
+        // rendent sûr : `AttributionConseiller` en attribue un automatiquement
+        // dès la validation du compte, et les cas résiduels restent
+        // actionnables par le super-admin via `?non_attribues=1` et
+        // `POST /clients/{client}/attribuer-conseiller` (voir
+        // PortefeuilleConseiller). Sans ces deux garanties, redevenir strict
+        // ici recréerait exactement l'angle mort que l'ancienne règle comblait.
         $client = Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
-        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
 
-        $this->withToken($agent->createToken('t')->plainTextToken)
+        $this->withToken($this->agentToken())
             ->getJson("/api/staff/clients/{$client->id}")
-            ->assertOk();
+            ->assertForbidden();
     }
 
     public function test_a_super_admin_sees_every_dossier(): void
@@ -292,19 +313,74 @@ class ClientManagementTest extends TestCase
         $autreConseiller = User::factory()->create();
         $autreConseiller->assignRole('agent-cpi');
 
-        Client::create(['name' => 'Le mien', 'ref' => Client::generateRef()]);
+        Client::create(['name' => 'Le mien', 'ref' => Client::generateRef(), 'conseiller_id' => $this->agent()->id]);
         Client::create([
             'name' => 'Celui du collègue',
             'ref' => Client::generateRef(),
             'conseiller_id' => $autreConseiller->id,
         ]);
+        // Cloisonnement STRICT : un dossier non attribué n'apparaît plus dans
+        // AUCUN portefeuille d'agent, y compris celui qui consulte la liste.
+        Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
 
-        $agent = User::query()->where('email', 'agent@cpi.sn')->firstOrFail();
-
-        $noms = array_column((array) $this->withToken($agent->createToken('t')->plainTextToken)
+        $noms = array_column((array) $this->withToken($this->agentToken())
             ->getJson('/api/staff/clients')->json('data'), 'name');
 
         $this->assertContains('Le mien', $noms);
         $this->assertNotContains('Celui du collègue', $noms);
+        $this->assertNotContains('Sans conseiller', $noms);
+    }
+
+    public function test_non_attribues_filter_is_admin_only_in_practice(): void
+    {
+        // Pas de garde-fou séparé à écrire : pour un agent, `filtrer()` a déjà
+        // tout restreint à SON portefeuille (jamais nul) avant que ce filtre
+        // ne s'applique — le résultat est mécaniquement vide.
+        Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
+        Client::create(['name' => 'Le mien', 'ref' => Client::generateRef(), 'conseiller_id' => $this->agent()->id]);
+
+        $nomsAgent = array_column((array) $this->withToken($this->agentToken())
+            ->getJson('/api/staff/clients?non_attribues=1')->json('data'), 'name');
+        $this->assertSame([], $nomsAgent);
+
+        $nomsAdmin = array_column((array) $this->withToken($this->adminToken())
+            ->getJson('/api/staff/clients?non_attribues=1')->json('data'), 'name');
+        $this->assertContains('Sans conseiller', $nomsAdmin);
+        $this->assertNotContains('Le mien', $nomsAdmin);
+    }
+
+    public function test_admin_can_manually_attribute_an_unassigned_dossier(): void
+    {
+        $client = Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
+
+        $reponse = $this->withToken($this->adminToken())
+            ->postJson("/api/staff/clients/{$client->id}/attribuer-conseiller")
+            ->assertOk();
+
+        $this->assertSame($this->agent()->id, $reponse->json('data.conseiller.id'));
+        $this->assertSame($this->agent()->id, $client->refresh()->conseiller_id);
+        $this->assertSame($this->agent()->name, $client->conseiller);
+    }
+
+    public function test_agent_cannot_manually_attribute_an_unassigned_dossier(): void
+    {
+        // La policy `update` referme déjà cette porte : le cloisonnement
+        // strict rend ce dossier invisible à TOUT agent, y compris pour
+        // cette action.
+        $client = Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
+
+        $this->withToken($this->agentToken())
+            ->postJson("/api/staff/clients/{$client->id}/attribuer-conseiller")
+            ->assertForbidden();
+    }
+
+    public function test_manual_attribution_requires_an_available_agent(): void
+    {
+        User::role('agent-cpi')->delete();
+        $client = Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
+
+        $this->withToken($this->adminToken())
+            ->postJson("/api/staff/clients/{$client->id}/attribuer-conseiller")
+            ->assertStatus(409);
     }
 }

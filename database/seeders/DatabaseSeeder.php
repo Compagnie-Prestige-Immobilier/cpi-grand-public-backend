@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\StatutCompte;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -37,7 +38,12 @@ class DatabaseSeeder extends Seeder
 
         $agent = User::firstOrCreate(
             ['email' => 'agent@cpi.sn'],
-            ['name' => 'Agent CPI', 'password' => Hash::make('agent1234')],
+            // Un compte du personnel est créé par un administrateur : le faire
+            // passer par la file de validation n'aurait aucun sens, et le
+            // laisser au statut par défaut le bloquerait sur une plateforme
+            // vierge.
+            ['name' => 'Agent CPI', 'password' => Hash::make('agent1234'),
+                'email_verified_at' => now(), 'statut_compte' => StatutCompte::Valide],
         );
         if (! $agent->hasRole('agent-cpi')) {
             $agent->assignRole('agent-cpi');
@@ -45,7 +51,8 @@ class DatabaseSeeder extends Seeder
 
         $admin = User::firstOrCreate(
             ['email' => 'admin@cpi.sn'],
-            ['name' => 'Administrateur CPI', 'password' => Hash::make('admin1234')],
+            ['name' => 'Administrateur CPI', 'password' => Hash::make('admin1234'),
+                'email_verified_at' => now(), 'statut_compte' => StatutCompte::Valide],
         );
         if (! $admin->hasRole('super-admin')) {
             $admin->assignRole('super-admin');

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\User;
 use App\Support\ParcoursDossier;
+use App\Support\PortefeuilleConseiller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,10 +21,16 @@ use Spatie\Activitylog\Models\Activity;
  *
  * Deux niveaux de lecture, deux niveaux d'habilitation :
  *  - `agent` : le portefeuille de dossiers (pièces, documents CPI, chantiers).
- *    Habilité par `view-clients` — agent-cpi et super-admin ;
+ *    Habilité par `view-clients` — agent-cpi et super-admin. Cloisonné comme
+ *    `HistoriqueController` : un agent-cpi ne voit que SES dossiers
+ *    (`PortefeuilleConseiller`), le super-admin voit la plateforme entière —
+ *    avant ce cloisonnement, `GET /staff/stats/agent` renvoyait les mêmes
+ *    totaux à tout le monde, un agent lisait la charge de travail de ses
+ *    collègues comme si c'était la sienne ;
  *  - `admin` : les totaux de la plateforme (comptes, banques, décaissements,
  *    volume d'activité). Habilité par `view-stats` — super-admin uniquement,
- *    seul rôle à détenir cette permission dans le seeder.
+ *    seul rôle à détenir cette permission dans le seeder. Jamais cloisonné :
+ *    c'est une vue de plateforme par construction.
  *
  * `dashboard` sert le bloc correspondant au rôle de l'appelant : un agent
  * reçoit `admin: null`, l'administrateur reçoit les deux — un seul appel
@@ -57,7 +64,7 @@ class StatsController extends Controller
         return response()->json(['data' => [
             'role' => $user?->getRoleNames()->first(),
             'genereLe' => now()->format('Y-m-d H:i:s'),
-            'agent' => $this->agentStats(),
+            'agent' => $this->agentStats($request->user()),
             'admin' => $estAdmin ? $this->adminStats() : null,
         ]]);
     }
@@ -65,11 +72,11 @@ class StatsController extends Controller
     /**
      * GET /staff/stats/agent — portefeuille de dossiers.
      */
-    public function agent(): JsonResponse
+    public function agent(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Client::class);
 
-        return response()->json(['data' => $this->agentStats()]);
+        return response()->json(['data' => $this->agentStats($request->user())]);
     }
 
     /**
@@ -88,27 +95,41 @@ class StatsController extends Controller
      * Portefeuille : répartition des dossiers dans le parcours, état des
      * pièces requises, des documents CPI, des chantiers et des notifications.
      *
+     * Cloisonné : `$clientIds` vaut `null` pour un super-admin
+     * (`PortefeuilleConseiller::voitTout`) — aucun filtre, la plateforme
+     * entière — et la liste des dossiers de l'agent sinon. Calculée une seule
+     * fois ici et redescendue à chaque agrégat plutôt que refiltrée à chaque
+     * requête : un agent et l'administrateur ne doivent jamais pouvoir
+     * diverger sur QUELS dossiers comptent, seulement sur COMBIEN il y en a.
+     *
      * @return array<string, mixed>
      */
-    private function agentStats(): array
+    private function agentStats(User $user): array
     {
-        $parEtape = $this->dossiersParEtape();
+        $clientIds = PortefeuilleConseiller::voitTout($user)
+            ? null
+            : DB::table('clients')->where('conseiller_id', $user->id)->pluck('id')->all();
+
+        $parEtape = $this->dossiersParEtape($clientIds);
         $total = array_sum($parEtape);
         $finalises = $parEtape[self::ETAPE_SIGNATURE];
         $nonSoumis = $parEtape[0];
 
-        $docs = $this->comptesParColonne('requis_docs', 'status');
+        $docs = $this->comptesParColonne('requis_docs', 'status', $clientIds);
         $aVerifier = $docs['depose'] + $docs['verification'];
 
-        $cpiDocs = $this->comptesParColonne('cpi_docs', 'status');
-        $chantiers = $this->comptesParColonne('chantiers', 'statut');
-        $tranches = $this->comptesParColonne('chantier_tranches', 'etat');
+        $cpiDocs = $this->comptesParColonne('cpi_docs', 'status', $clientIds);
+        $chantiers = $this->comptesParColonne('chantiers', 'statut', $clientIds);
+        $tranches = $this->comptesParColonneChantierTranches($clientIds);
 
         return [
             'clients' => [
                 'total' => $total,
-                'avecCompte' => DB::table('clients')->whereNotNull('user_id')->count(),
-                'nouveaux' => $this->nouveauxClients(),
+                'avecCompte' => DB::table('clients')
+                    ->whereNotNull('user_id')
+                    ->when($clientIds !== null, fn ($q) => $q->whereIn('id', $clientIds))
+                    ->count(),
+                'nouveaux' => $this->nouveauxClients($clientIds),
             ],
             'dossiers' => [
                 // Index 0-5, alignés sur TIMELINE_STEPS côté front.
@@ -119,9 +140,11 @@ class StatsController extends Controller
                 'tauxFinalisation' => $total > 0 ? (int) round($finalises / $total * 100) : 0,
                 'avecPiecesAVerifier' => DB::table('requis_docs')
                     ->whereIn('status', ['depose', 'verification'])
+                    ->when($clientIds !== null, fn ($q) => $q->whereIn('client_id', $clientIds))
                     ->distinct()->count('client_id'),
                 'avecDocsASigner' => DB::table('cpi_docs')
                     ->where('status', 'a-signer')->where('visible_client', true)
+                    ->when($clientIds !== null, fn ($q) => $q->whereIn('client_id', $clientIds))
                     ->distinct()->count('client_id'),
             ],
             'documents' => [
@@ -139,7 +162,9 @@ class StatsController extends Controller
                 'brouillons' => $cpiDocs['brouillon'],
                 'disponibles' => $cpiDocs['disponible'],
                 'aSigner' => DB::table('cpi_docs')
-                    ->where('status', 'a-signer')->where('visible_client', true)->count(),
+                    ->where('status', 'a-signer')->where('visible_client', true)
+                    ->when($clientIds !== null, fn ($q) => $q->whereIn('client_id', $clientIds))
+                    ->count(),
                 'signes' => $cpiDocs['signe'],
                 'archives' => $cpiDocs['archive'],
             ],
@@ -150,10 +175,12 @@ class StatsController extends Controller
                 'enRetard' => $chantiers['en-retard'],
                 'suspendus' => $chantiers['suspendu'],
                 'termines' => $chantiers['termine'] + $chantiers['livre'],
-                'progressionMoyenne' => (int) round((float) DB::table('chantiers')->avg('progression')),
+                'progressionMoyenne' => (int) round((float) DB::table('chantiers')
+                    ->when($clientIds !== null, fn ($q) => $q->whereIn('client_id', $clientIds))
+                    ->avg('progression')),
                 'tranchesTerminees' => $tranches['terminee'],
             ],
-            'notifications' => $this->notificationStats(),
+            'notifications' => $this->notificationStats($clientIds),
         ];
     }
 
@@ -216,13 +243,15 @@ class StatsController extends Controller
      * Nombre de dossiers par étape du parcours (index 0 à 5, toujours présents
      * même à zéro) — une seule requête, `group by` sur l'expression d'étape.
      *
+     * @param  ?list<string>  $clientIds  Portefeuille de l'appelant, `null` pour la plateforme entière.
      * @return array<int, int>
      */
-    private function dossiersParEtape(): array
+    private function dossiersParEtape(?array $clientIds): array
     {
         $parEtape = array_fill(0, 6, 0);
 
         $rows = DB::table('clients as c')
+            ->when($clientIds !== null, fn ($q) => $q->whereIn('c.id', $clientIds))
             ->leftJoin('demandes as d', 'd.client_id', '=', 'c.id')
             ->leftJoinSub(
                 DB::table('requis_docs')
@@ -255,17 +284,54 @@ class StatsController extends Controller
      * connues toujours présentes à zéro : l'interface ne doit pas avoir à
      * distinguer « aucune ligne » de « clé absente ».
      *
+     * `$clientIds` ne s'applique qu'aux tables porteuses d'un `client_id`
+     * direct (`requis_docs`, `cpi_docs`, `chantiers`, `bank_assignments`) —
+     * `chantier_tranches`, reliée via `chantiers.id`, passe par
+     * `comptesParColonneChantierTranches()`. `adminStats()` n'appelle jamais
+     * celle-ci avec un filtre : ses agrégats restent globaux sans y toucher.
+     *
+     * @param  ?list<string>  $clientIds
      * @return array<string, int>
      */
-    private function comptesParColonne(string $table, string $colonne): array
+    private function comptesParColonne(string $table, string $colonne, ?array $clientIds = null): array
     {
         $connues = array_fill_keys(self::MODALITES[$table], 0);
 
         $rows = DB::table($table)
+            ->when($clientIds !== null, fn ($q) => $q->whereIn('client_id', $clientIds))
             ->select($colonne)
             ->selectRaw('count(*) as total')
             ->groupBy($colonne)
             ->pluck('total', $colonne);
+
+        foreach ($rows as $valeur => $total) {
+            $connues[(string) $valeur] = (int) $total;
+        }
+
+        return $connues;
+    }
+
+    /**
+     * Répartition de `chantier_tranches` par état, cloisonnée par portefeuille.
+     *
+     * Cette table n'a pas de `client_id` propre — seulement `chantier_id` —
+     * d'où une jointure vers `chantiers` plutôt que le `whereIn('client_id')`
+     * direct de `comptesParColonne()`.
+     *
+     * @param  ?list<string>  $clientIds
+     * @return array<string, int>
+     */
+    private function comptesParColonneChantierTranches(?array $clientIds): array
+    {
+        $connues = array_fill_keys(self::MODALITES['chantier_tranches'], 0);
+
+        $rows = DB::table('chantier_tranches as t')
+            ->join('chantiers as ch', 'ch.id', '=', 't.chantier_id')
+            ->when($clientIds !== null, fn ($q) => $q->whereIn('ch.client_id', $clientIds))
+            ->select('t.etat')
+            ->selectRaw('count(*) as total')
+            ->groupBy('t.etat')
+            ->pluck('total', 'etat');
 
         foreach ($rows as $valeur => $total) {
             $connues[(string) $valeur] = (int) $total;
@@ -294,30 +360,39 @@ class StatsController extends Controller
      * Inscriptions récentes — les trois fenêtres du sélecteur de période de
      * l'écran « Rapports & Analyses » (3 / 6 / 12 mois), plus le total.
      *
+     * @param  ?list<string>  $clientIds
      * @return array<string, int>
      */
-    private function nouveauxClients(): array
+    private function nouveauxClients(?array $clientIds): array
     {
         $depuis = fn (int $mois) => DB::table('clients')
             ->where('date_inscription', '>=', now()->subMonths($mois)->toDateString())
+            ->when($clientIds !== null, fn ($q) => $q->whereIn('id', $clientIds))
             ->count();
 
         return [
             'mois3' => $depuis(3),
             'mois6' => $depuis(6),
             'mois12' => $depuis(12),
-            'total' => DB::table('clients')->count(),
+            'total' => DB::table('clients')
+                ->when($clientIds !== null, fn ($q) => $q->whereIn('id', $clientIds))
+                ->count(),
         ];
     }
 
     /**
+     * @param  ?list<string>  $clientIds  `null` pour le flux global (`adminStats`).
      * @return array<string, int>
      */
-    private function notificationStats(): array
+    private function notificationStats(?array $clientIds = null): array
     {
         return [
-            'total' => DB::table('app_notifications')->count(),
-            'nonLues' => DB::table('app_notifications')->where('lu', false)->count(),
+            'total' => DB::table('app_notifications')
+                ->when($clientIds !== null, fn ($q) => $q->whereIn('client_id', $clientIds))
+                ->count(),
+            'nonLues' => DB::table('app_notifications')->where('lu', false)
+                ->when($clientIds !== null, fn ($q) => $q->whereIn('client_id', $clientIds))
+                ->count(),
         ];
     }
 }

@@ -8,6 +8,36 @@ littéraux, ils n'ont rien renommé.
 avec la liste des passages possibles. Avant, `Rule::in` validait la valeur sans
 jamais regarder d'où l'on venait.
 
+## Compte utilisateur — `StatutCompte`
+
+Aucun compte n'accède à la plateforme avant qu'un administrateur ne l'ait
+validé : s'inscrire ne donne droit à rien. Deux filtres successifs, qui ne
+répondent pas à la même question — la vérification d'adresse prouve que
+l'e-mail existe (automatique), la validation administrative est un jugement
+humain sur les informations déclarées.
+
+```mermaid
+stateDiagram-v2
+    [*] --> email_a_verifier : inscription
+    [*] --> en_attente_validation : inscription via Google (adresse déjà prouvée)
+    email_a_verifier --> en_attente_validation : lien de vérification cliqué
+    en_attente_validation --> valide : un administrateur approuve
+    en_attente_validation --> rejete : un administrateur refuse (motif obligatoire)
+    rejete --> en_attente_validation : la personne corrige et resoumet
+```
+
+`valide` est terminal : suspendre un compte est un autre sujet (désactivation),
+volontairement hors de ce cycle.
+
+Exceptions assumées :
+
+- **Le personnel CPI** (`agent-cpi`, `super-admin`) est créé `valide` par un
+  administrateur — le faire attendre une validation dont il est lui-même
+  l'auteur n'aurait pas de sens.
+- **Les comptes antérieurs** à cette règle ont été validés d'office par la
+  migration : personne ne devait se retrouver enfermé dehors par une règle qui
+  n'existait pas lors de son inscription.
+
 ## Pièce justificative — `RequisDocStatut`
 
 ```mermaid

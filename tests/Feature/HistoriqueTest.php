@@ -34,20 +34,34 @@ class HistoriqueTest extends TestCase
         return $this->agent()->createToken('t')->plainTextToken;
     }
 
-    private function adminToken(): string
+    private function admin(): User
     {
         /** @var User $admin */
         $admin = User::query()->where('email', 'admin@cpi.sn')->firstOrFail();
 
-        return $admin->createToken('t')->plainTextToken;
+        return $admin;
     }
 
+    private function adminToken(): string
+    {
+        return $this->admin()->createToken('t')->plainTextToken;
+    }
+
+    /**
+     * `conseiller_id` par défaut à l'agent seedé : ces tests portent sur le
+     * JOURNAL (pagination, sérialisation, filtrage par dossier), pas sur le
+     * cloisonnement lui-même — sous le cloisonnement strict, une entrée dont
+     * le sujet appartient à un dossier non attribué serait invisible pour
+     * l'agent qui interroge `/staff/historique`, cassant ces tests pour une
+     * raison qui n'est pas celle qu'ils vérifient.
+     */
     private function makeClient(string $name = 'Dossier Historique'): Client
     {
         return Client::create([
             'name' => $name,
             'ref' => Client::generateRef(),
             'date_inscription' => now(),
+            'conseiller_id' => $this->agent()->id,
         ])->refresh();
     }
 
@@ -209,6 +223,105 @@ class HistoriqueTest extends TestCase
         $this->withToken($this->agentToken())
             ->getJson('/api/staff/historique/019fb302-0098-715f-a528-56360e84eb74')
             ->assertStatus(404);
+    }
+
+    // ─── Cloisonnement du journal (STEP 4) ─────────────────────
+
+    public function test_index_excludes_a_colleagues_dossier(): void
+    {
+        // Le cœur du correctif : avant, TOUT agent-cpi lisait le journal
+        // COMPLET de la plateforme — identités, revenus, montants — quel que
+        // soit le portefeuille auquel il appartenait réellement.
+        $collegue = User::factory()->create();
+        $collegue->assignRole('agent-cpi');
+        $dossierDuCollegue = Client::create([
+            'name' => 'Dossier du collègue', 'ref' => Client::generateRef(), 'conseiller_id' => $collegue->id,
+        ]);
+        Activity::query()->delete();
+        activity()->causedBy($collegue)->performedOn($dossierDuCollegue)
+            ->event('validated')->log('Pièce du collègue validée');
+
+        $this->withToken($this->agentToken())->getJson('/api/staff/historique')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 0);
+    }
+
+    public function test_index_includes_the_agents_own_client_account_events(): void
+    {
+        // `compte-valide`, `compte-rejete`… visent le `User` du client, pas le
+        // `Client` lui-même : sans la résolution User → client, un agent
+        // perdrait la trace de la validation ou de l'attribution de SES
+        // PROPRES clients — l'essentiel de ce que cet historique sert à
+        // retrouver.
+        //
+        // `makeClient()` ne relie à aucun `User` : il faut ici un client dont
+        // le compte de connexion existe réellement, sujet de l'événement.
+        $utilisateur = User::factory()->create();
+        $utilisateur->assignRole('client');
+        $client = Client::create([
+            'user_id' => $utilisateur->id, 'name' => $utilisateur->name, 'ref' => Client::generateRef(),
+            'email' => $utilisateur->email, 'date_inscription' => now(), 'conseiller_id' => $this->agent()->id,
+        ]);
+        Activity::query()->delete();
+        activity()->causedBy($this->admin())
+            ->performedOn($utilisateur)
+            ->event('compte-valide')->log('Compte validé');
+
+        $this->withToken($this->agentToken())->getJson('/api/staff/historique')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.event', 'compte-valide');
+    }
+
+    public function test_index_excludes_platform_level_events(): void
+    {
+        // Création/suppression d'un compte du personnel, données de
+        // démonstration : aucun sujet, ou un sujet `User` sans `Client`
+        // associé — ces événements ne concernent AUCUN dossier, ils restent
+        // réservés au super-admin comme la gestion du personnel elle-même.
+        $unAutreAgent = User::factory()->create();
+        $unAutreAgent->assignRole('agent-cpi');
+        Activity::query()->delete();
+        activity()->causedBy($this->admin())
+            ->performedOn($unAutreAgent)
+            ->event('compte-staff-supprime')->log('Compte du personnel supprimé');
+
+        $this->withToken($this->agentToken())->getJson('/api/staff/historique')
+            ->assertOk()->assertJsonPath('meta.total', 0);
+
+        $this->withToken($this->adminToken())->getJson('/api/staff/historique')
+            ->assertOk()->assertJsonPath('meta.total', 1);
+    }
+
+    public function test_index_excludes_an_unassigned_dossier(): void
+    {
+        // Cohérent avec `ClientController::index` : un dossier non attribué
+        // n'apparaît dans le portefeuille d'AUCUN agent, y compris dans son
+        // journal.
+        $sansConseiller = Client::create(['name' => 'Sans conseiller', 'ref' => Client::generateRef()]);
+        Activity::query()->delete();
+        activity()->causedBy($this->agent())->performedOn($sansConseiller)
+            ->event('validated')->log('Entrée sur un dossier non attribué');
+
+        $this->withToken($this->agentToken())->getJson('/api/staff/historique')
+            ->assertOk()->assertJsonPath('meta.total', 0);
+    }
+
+    public function test_admin_sees_every_portfolio_and_every_platform_event(): void
+    {
+        $collegue = User::factory()->create();
+        $collegue->assignRole('agent-cpi');
+        $dossierDuCollegue = Client::create([
+            'name' => 'Dossier du collègue', 'ref' => Client::generateRef(), 'conseiller_id' => $collegue->id,
+        ]);
+        Activity::query()->delete();
+        activity()->causedBy($collegue)->performedOn($dossierDuCollegue)
+            ->event('validated')->log('Pièce du collègue validée');
+        activity()->causedBy($this->admin())->performedOn($collegue)
+            ->event('compte-staff-supprime')->log('Compte du personnel supprimé');
+
+        $this->withToken($this->adminToken())->getJson('/api/staff/historique')
+            ->assertOk()->assertJsonPath('meta.total', 2);
     }
 
     public function test_admin_can_also_read_the_journal(): void
