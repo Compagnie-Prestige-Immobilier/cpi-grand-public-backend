@@ -36,14 +36,22 @@ class StatutCompteTest extends TestCase
         ]);
     }
 
-    public function test_a_new_account_starts_unverified_and_unapproved(): void
+    /**
+     * La vérification d'e-mail est temporairement NON bloquante (même
+     * traitement que Google, dont le fournisseur a déjà prouvé l'adresse) :
+     * un compte fraîchement inscrit part directement en file d'attente
+     * administrative, sans passer par `EmailAVerifier`. Seule la validation
+     * humaine reste un vrai barrage.
+     */
+    public function test_a_new_account_starts_unverified_but_already_in_the_admin_queue(): void
     {
         Notification::fake();
 
         $user = $this->inscrire();
 
-        $this->assertSame(StatutCompte::EmailAVerifier, $user->statut_compte);
+        $this->assertSame(StatutCompte::EnAttenteValidation, $user->statut_compte);
         $this->assertFalse($user->hasVerifiedEmail());
+        $this->assertFalse($user->compteValide());
     }
 
     public function test_registration_sends_the_verification_email(): void
@@ -55,7 +63,12 @@ class StatutCompteTest extends TestCase
         Notification::assertSentTo($user, VerifyEmail::class);
     }
 
-    public function test_verifying_the_email_puts_the_account_in_the_admin_queue(): void
+    /**
+     * Un compte fraîchement inscrit est déjà en file d'attente (voir le test
+     * ci-dessus) : cliquer le lien ne fait donc que marquer l'adresse
+     * vérifiée, sans transition de statut à opérer.
+     */
+    public function test_verifying_the_email_of_a_fresh_account_only_records_the_verification(): void
     {
         Notification::fake();
         $user = $this->inscrire();
@@ -64,9 +77,26 @@ class StatutCompteTest extends TestCase
 
         $user->refresh();
         $this->assertTrue($user->hasVerifiedEmail());
-        // La vérification NE donne PAS accès : elle met en file d'attente.
         $this->assertSame(StatutCompte::EnAttenteValidation, $user->statut_compte);
         $this->assertFalse($user->compteValide());
+    }
+
+    /**
+     * Chemin hérité : un compte encore au statut `EmailAVerifier` (créé avant
+     * l'assouplissement, ou par un futur retour à la vérification
+     * obligatoire) doit toujours basculer en file d'attente au clic — la
+     * transition elle-même n'a pas changé, seul `register()` ne l'emprunte
+     * plus par défaut.
+     */
+    public function test_verifying_the_email_of_a_legacy_account_still_queues_it(): void
+    {
+        $user = User::factory()->emailAVerifier()->create();
+
+        $this->get($this->lienDeVerification($user))->assertRedirect();
+
+        $user->refresh();
+        $this->assertTrue($user->hasVerifiedEmail());
+        $this->assertSame(StatutCompte::EnAttenteValidation, $user->statut_compte);
     }
 
     public function test_an_unsigned_verification_link_is_refused(): void
@@ -157,7 +187,7 @@ class StatutCompteTest extends TestCase
 
         $this->withToken($token)->getJson('/api/auth/me')
             ->assertOk()
-            ->assertJsonPath('data.user.statutCompte', StatutCompte::EmailAVerifier->value)
+            ->assertJsonPath('data.user.statutCompte', StatutCompte::EnAttenteValidation->value)
             ->assertJsonPath('data.user.emailVerifie', false);
     }
 
@@ -174,7 +204,7 @@ class StatutCompteTest extends TestCase
             'password' => 'MotDePasse!2026',
         ])
             ->assertCreated()
-            ->assertJsonPath('data.user.statutCompte', StatutCompte::EmailAVerifier->value)
+            ->assertJsonPath('data.user.statutCompte', StatutCompte::EnAttenteValidation->value)
             ->assertJsonPath('data.user.emailVerifie', false);
     }
 

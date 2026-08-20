@@ -22,6 +22,15 @@ return Application::configure(basePath: dirname(__DIR__))
             'staff' => StaffAuth::class,
         ]);
 
+        // Le conteneur n'écoute que sur 127.0.0.1 (docker-compose.yml) : seul
+        // le reverse proxy du VPS (TLS, Traefik) peut lui parler, jamais
+        // Internet directement. Sans cette ligne, Laravel ignore les en-têtes
+        // `X-Forwarded-Proto`/`-Host` de ce proxy et croit chaque requête
+        // reçue en clair — un lien signé généré pendant la requête (courriel
+        // de vérification, entre autres) sort alors en `http://` au lieu de
+        // `https://`, même quand le certificat public est valide.
+        $middleware->trustProxies(at: '*');
+
         // Applique `throttle:api` à tout le groupe api. Sans cet appel, le
         // squelette Laravel 11+ ne pose AUCUNE limite de débit : bourrage
         // d'identifiants illimité sur /auth/login, création de comptes en masse
